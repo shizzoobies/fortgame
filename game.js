@@ -976,7 +976,7 @@ const game = {
                 <span>Gold Mine</span>
                 <span class="upgrade-cost">${this._getMineCost()}g</span>
             </div>
-            <div class="upgrade-desc">${this.mineLevel < 2 ? '+2g/s per level' : '+15% income per level'}</div>
+            <div class="upgrade-desc">${this.mineLevel < 2 ? '+3g/s per level' : '+15% income per level'}</div>
             <div class="upgrade-level">Level ${this.mineLevel}</div>
         `;
         mineBtn.addEventListener('click', () => this.buyMine());
@@ -1078,10 +1078,10 @@ const game = {
     },
 
     _getMineIncome() {
-        // Levels 1-2: flat 2 gold/sec per level
+        // Levels 1-2: flat 3 gold/sec per level
         // Levels 3+: compound — each level adds 15% more income
-        if (this.mineLevel <= 2) return this.mineLevel * 2;
-        const base = 4; // level 2 output
+        if (this.mineLevel <= 2) return this.mineLevel * 3;
+        const base = 6; // level 2 output
         return base * Math.pow(1.15, this.mineLevel - 2);
     },
 
@@ -1258,7 +1258,7 @@ const game = {
             mineBtn.querySelector('.upgrade-level').textContent =
                 this.mineLevel > 0 ? `Level ${this.mineLevel} (+${incomeStr}g/s)` : 'Level 0';
             mineBtn.querySelector('.upgrade-desc').textContent =
-                this.mineLevel < 2 ? '+2g/s per level' : '+15% income per level';
+                this.mineLevel < 2 ? '+3g/s per level' : '+15% income per level';
             mineBtn.disabled = this.gold < mineCost || this.state === 'gameover';
         }
     },
@@ -1348,7 +1348,7 @@ const game = {
         // Now remove dead enemies
         this.enemies = this.enemies.filter(e => !e.dead);
 
-        // Gold mine passive income
+        // Gold mine passive income (works in idle and active states)
         if (this.mineLevel > 0) {
             this.mineAccum += this._getMineIncome() * dt;
             if (this.mineAccum >= 1) {
@@ -1356,6 +1356,12 @@ const game = {
                 this.gold += earned;
                 this.totalGoldEarned += earned;
                 this.mineAccum -= earned;
+                // Show floating gold text from mine position
+                const mineX = this.fortress.x - this.fortress.width / 2 - 35;
+                this.floatingTexts.push(new FloatingText(
+                    mineX + randRange(-5, 5), this.groundY - 30,
+                    `+${earned}g`, '#ffd700', 11
+                ));
                 this.updateUI();
             }
         }
