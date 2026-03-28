@@ -975,7 +975,7 @@ const game = {
                 <span>Gold Mine</span>
                 <span class="upgrade-cost">${this._getMineCost()}g</span>
             </div>
-            <div class="upgrade-desc">+2 gold/sec per level</div>
+            <div class="upgrade-desc">${this.mineLevel < 2 ? '+2g/s per level' : '+15% income per level'}</div>
             <div class="upgrade-level">Level ${this.mineLevel}</div>
         `;
         mineBtn.addEventListener('click', () => this.buyMine());
@@ -1074,7 +1074,11 @@ const game = {
     },
 
     _getMineIncome() {
-        return this.mineLevel * 2; // 2 gold/sec per level
+        // Levels 1-2: flat 2 gold/sec per level
+        // Levels 3+: compound — each level adds 15% more income
+        if (this.mineLevel <= 2) return this.mineLevel * 2;
+        const base = 4; // level 2 output
+        return base * Math.pow(1.15, this.mineLevel - 2);
     },
 
     startWave() {
@@ -1216,8 +1220,12 @@ const game = {
         if (mineBtn) {
             const mineCost = this._getMineCost();
             mineBtn.querySelector('.upgrade-cost').textContent = mineCost + 'g';
+            const income = this._getMineIncome();
+            const incomeStr = income % 1 === 0 ? income : income.toFixed(1);
             mineBtn.querySelector('.upgrade-level').textContent =
-                this.mineLevel > 0 ? `Level ${this.mineLevel} (+${this._getMineIncome()}g/s)` : 'Level 0';
+                this.mineLevel > 0 ? `Level ${this.mineLevel} (+${incomeStr}g/s)` : 'Level 0';
+            mineBtn.querySelector('.upgrade-desc').textContent =
+                this.mineLevel < 2 ? '+2g/s per level' : '+15% income per level';
             mineBtn.disabled = this.gold < mineCost || this.state === 'gameover';
         }
     },
@@ -1461,7 +1469,9 @@ const game = {
         ctx.fillStyle = '#ffd700';
         ctx.font = 'bold 10px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`+${this._getMineIncome()}g/s`, mineX, mineY - mineH - 12 - lvl * 2);
+        const mIncome = this._getMineIncome();
+        const mIncStr = mIncome % 1 === 0 ? mIncome : mIncome.toFixed(1);
+        ctx.fillText(`+${mIncStr}g/s`, mineX, mineY - mineH - 12 - lvl * 2);
     },
 };
 
