@@ -59,6 +59,32 @@ const CONFIG = {
             width: 38,
             height: 42,
         },
+        bat: {
+            name: 'Bat',
+            hp: 10,
+            speed: 80,
+            damage: 5,
+            reward: 12,
+            color: '#885577',
+            accentColor: '#663355',
+            width: 18,
+            height: 14,
+            flying: true,
+            flyHeight: 80,
+        },
+        dragon: {
+            name: 'Dragon',
+            hp: 200,
+            speed: 18,
+            damage: 30,
+            reward: 65,
+            color: '#cc4444',
+            accentColor: '#aa2222',
+            width: 44,
+            height: 36,
+            flying: true,
+            flyHeight: 120,
+        },
     },
     projectile: {
         speed: 400,
@@ -266,17 +292,21 @@ class Enemy {
         const cfg = CONFIG.enemies[type];
         this.type = type;
         this.name = cfg.name;
-        this.maxHp = Math.floor(cfg.hp * (1 + CONFIG.waves.hpScalePerWave * (waveNum - 1)));
+        this.maxHp = Math.floor(cfg.hp * Math.pow(1.12, waveNum - 1));
         this.hp = this.maxHp;
         this.speed = cfg.speed;
-        this.damage = cfg.damage;
-        this.reward = Math.floor(cfg.reward * (1 + (waveNum - 1) * 0.1)); // +10% gold per wave
+        this.damage = Math.ceil(cfg.damage * (1 + (waveNum - 1) * 0.05));
+        this.reward = Math.floor(cfg.reward * (1 + (waveNum - 1) * 0.1));
         this.color = cfg.color;
         this.accentColor = cfg.accentColor;
         this.width = cfg.width;
         this.height = cfg.height;
         this.x = x;
         this.y = y;
+        this.flying = cfg.flying || false;
+        this.flyHeight = cfg.flyHeight || 0;
+        this.baseY = y; // ground reference
+        this.wingPhase = Math.random() * Math.PI * 2;
         this.dead = false;
         this.hitFlash = 0;
         this.bobPhase = Math.random() * Math.PI * 2;
@@ -304,6 +334,12 @@ class Enemy {
 
         this.bobPhase += dt * (this.speed * 0.08);
         if (this.hitFlash > 0) this.hitFlash -= dt;
+
+        // Flying enemies: hover above ground with sine wave
+        if (this.flying) {
+            this.wingPhase += dt * 6;
+            this.y = this.baseY - this.flyHeight + Math.sin(this.bobPhase * 0.5) * 12;
+        }
     }
 
     draw(ctx) {
@@ -331,6 +367,10 @@ class Enemy {
             this._drawTank(ctx, drawX, drawY, hw, hh);
         } else if (this.type === 'boss') {
             this._drawBoss(ctx, drawX, drawY, hw, hh);
+        } else if (this.type === 'bat') {
+            this._drawBat(ctx, drawX, drawY, hw, hh);
+        } else if (this.type === 'dragon') {
+            this._drawDragon(ctx, drawX, drawY, hw, hh);
         }
 
         // Health bar
@@ -466,6 +506,93 @@ class Enemy {
             ctx.fillRect(x - 4, y - hh - 9, 3, 3);
             ctx.fillRect(x + 1, y - hh - 9, 3, 3);
         }
+    }
+
+    _drawBat(ctx, x, y, hw, hh) {
+        // Body (small oval)
+        ctx.beginPath();
+        ctx.ellipse(x, y - hh * 0.5, hw * 0.6, hh * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Wings (animated)
+        const wingAngle = Math.sin(this.wingPhase) * 0.5;
+        ctx.fillStyle = this.hitFlash > 0 ? '#fff' : this.accentColor;
+        // Left wing
+        ctx.beginPath();
+        ctx.moveTo(x - hw * 0.3, y - hh * 0.5);
+        ctx.lineTo(x - hw * 1.5, y - hh * 0.8 + wingAngle * 10);
+        ctx.lineTo(x - hw * 1.2, y - hh * 0.2 + wingAngle * 5);
+        ctx.closePath();
+        ctx.fill();
+        // Right wing
+        ctx.beginPath();
+        ctx.moveTo(x + hw * 0.3, y - hh * 0.5);
+        ctx.lineTo(x + hw * 1.5, y - hh * 0.8 + wingAngle * 10);
+        ctx.lineTo(x + hw * 1.2, y - hh * 0.2 + wingAngle * 5);
+        ctx.closePath();
+        ctx.fill();
+        // Eyes
+        if (this.hitFlash <= 0) {
+            ctx.fillStyle = '#ff3366';
+            ctx.fillRect(x - 3, y - hh * 0.6, 2, 2);
+            ctx.fillRect(x + 1, y - hh * 0.6, 2, 2);
+        }
+    }
+
+    _drawDragon(ctx, x, y, hw, hh) {
+        // Body (large, muscular)
+        ctx.beginPath();
+        ctx.moveTo(x - hw, y);
+        ctx.lineTo(x - hw * 0.8, y - hh);
+        ctx.lineTo(x + hw * 0.8, y - hh);
+        ctx.lineTo(x + hw, y);
+        ctx.closePath();
+        ctx.fill();
+        // Wings (large, animated)
+        const wingAngle = Math.sin(this.wingPhase) * 0.6;
+        ctx.fillStyle = this.hitFlash > 0 ? '#fff' : this.accentColor;
+        // Left wing
+        ctx.beginPath();
+        ctx.moveTo(x - hw * 0.5, y - hh * 0.7);
+        ctx.lineTo(x - hw * 2.2, y - hh * 1.3 + wingAngle * 15);
+        ctx.lineTo(x - hw * 1.8, y - hh * 0.3 + wingAngle * 8);
+        ctx.lineTo(x - hw * 0.3, y - hh * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        // Right wing
+        ctx.beginPath();
+        ctx.moveTo(x + hw * 0.5, y - hh * 0.7);
+        ctx.lineTo(x + hw * 2.2, y - hh * 1.3 + wingAngle * 15);
+        ctx.lineTo(x + hw * 1.8, y - hh * 0.3 + wingAngle * 8);
+        ctx.lineTo(x + hw * 0.3, y - hh * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        // Head
+        ctx.fillStyle = this.hitFlash > 0 ? '#fff' : this.color;
+        ctx.beginPath();
+        ctx.arc(x, y - hh - 6, 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Horns
+        ctx.strokeStyle = this.hitFlash > 0 ? '#fff' : '#ff6644';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 6, y - hh - 10);
+        ctx.lineTo(x - 10, y - hh - 22);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + 6, y - hh - 10);
+        ctx.lineTo(x + 10, y - hh - 22);
+        ctx.stroke();
+        // Eyes (glowing)
+        if (this.hitFlash <= 0) {
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillRect(x - 4, y - hh - 8, 3, 3);
+            ctx.fillRect(x + 1, y - hh - 8, 3, 3);
+        }
+        // Fire breath hint
+        ctx.fillStyle = 'rgba(255, 100, 30, 0.15)';
+        ctx.beginPath();
+        ctx.arc(x - hw - 5, y - hh * 0.5, 6, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
@@ -739,30 +866,44 @@ class WaveManager {
 
     _generateWave(num) {
         const queue = [];
-        const totalEnemies = CONFIG.waves.baseEnemyCount + Math.floor(num * CONFIG.waves.enemyCountScale);
+        // Accelerating enemy count: grows faster each wave
+        const totalEnemies = CONFIG.waves.baseEnemyCount +
+            Math.floor(num * CONFIG.waves.enemyCountScale * Math.pow(1.05, num - 1));
 
         // Composition based on wave number
-        let gruntPct = Math.max(0.3, 1 - num * 0.08);
-        let runnerPct = clamp(num * 0.06, 0, 0.35);
-        let tankPct = clamp((num - 3) * 0.05, 0, 0.3);
+        let gruntPct = Math.max(0.2, 1 - num * 0.07);
+        let runnerPct = clamp(num * 0.06, 0, 0.3);
+        let tankPct = clamp((num - 3) * 0.04, 0, 0.25);
+        let batPct = clamp((num - 2) * 0.04, 0, 0.2);   // bats from wave 3
+        let dragonPct = clamp((num - 7) * 0.02, 0, 0.1); // dragons from wave 8
 
         // Normalize
-        const total = gruntPct + runnerPct + tankPct;
+        const total = gruntPct + runnerPct + tankPct + batPct + dragonPct;
         gruntPct /= total;
         runnerPct /= total;
         tankPct /= total;
+        batPct /= total;
+        dragonPct /= total;
 
         const grunts = Math.round(totalEnemies * gruntPct);
         const runners = Math.round(totalEnemies * runnerPct);
         const tanks = Math.round(totalEnemies * tankPct);
+        const bats = Math.round(totalEnemies * batPct);
+        const dragons = Math.round(totalEnemies * dragonPct);
 
         for (let i = 0; i < grunts; i++) queue.push('grunt');
         for (let i = 0; i < runners; i++) queue.push('runner');
         for (let i = 0; i < tanks; i++) queue.push('tank');
+        for (let i = 0; i < bats; i++) queue.push('bat');
+        for (let i = 0; i < dragons; i++) queue.push('dragon');
 
         // Boss every N waves
         if (num > 0 && num % CONFIG.waves.bossWaveInterval === 0) {
             queue.push('boss');
+        }
+        // Dragon boss from wave 8+
+        if (num >= 8 && num % 4 === 0) {
+            queue.push('dragon');
         }
 
         // Shuffle
@@ -787,7 +928,7 @@ class WaveManager {
                 const enemy = new Enemy(type, spawnX, game.groundY, this.waveNum);
                 game.enemies.push(enemy);
                 this.totalSpawned++;
-                this.spawnTimer = CONFIG.waves.spawnInterval - Math.min(this.waveNum * 0.02, 0.3);
+                this.spawnTimer = Math.max(0.15, CONFIG.waves.spawnInterval - this.waveNum * 0.025);
             }
         }
 
@@ -1348,8 +1489,8 @@ const game = {
         // Now remove dead enemies
         this.enemies = this.enemies.filter(e => !e.dead);
 
-        // Gold mine passive income (works in idle and active states)
-        if (this.mineLevel > 0) {
+        // Gold mine passive income (only during active waves)
+        if (this.mineLevel > 0 && this.state === 'active') {
             this.mineAccum += this._getMineIncome() * dt;
             if (this.mineAccum >= 1) {
                 const earned = Math.floor(this.mineAccum);
@@ -1366,8 +1507,8 @@ const game = {
             }
         }
 
-        // Mason passive healing (only when mine is built)
-        if (this.upgradeLevels.mason > 0 && this.mineLevel > 0) {
+        // Mason passive healing (only during combat when mine is built)
+        if (this.upgradeLevels.mason > 0 && this.mineLevel > 0 && this.state === 'active') {
             const healRate = this._getMasonPassiveHeal();
             if (healRate > 0 && this.fortress.hp < this.fortress.maxHp) {
                 this.fortress.hp = Math.min(this.fortress.hp + healRate * dt, this.fortress.maxHp);
@@ -1388,6 +1529,18 @@ const game = {
         }
 
         ctx.save();
+
+        // Dynamic camera: zoom out if fortress is too tall for the canvas
+        const fortressTopY = this.groundY - this.fortress.height - 40;
+        const neededHeight = this.groundY + 60; // ground to top of fortress + margin
+        const availableHeight = h;
+        const cameraScale = Math.min(1.0, availableHeight / (this.fortress.height + 200));
+        if (cameraScale < 1.0) {
+            // Scale from bottom of canvas so ground stays anchored
+            ctx.translate(0, h * (1 - cameraScale));
+            ctx.scale(cameraScale, cameraScale);
+        }
+
         ctx.translate(shakeX, shakeY);
 
         // ---- Background ----
