@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortress Stand</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- HUD Bar -->
+    <div id="hud">
+        <div class="hud-item">
+            <span class="hud-label">Wave</span>
+            <span id="hud-wave" class="hud-value">1</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Fortress HP</span>
+            <div id="hud-hp-bar">
+                <div id="hud-hp-fill"></div>
+                <span id="hud-hp-text">100 / 100</span>
+            </div>
+        </div>
+        <div class="hud-item gold-display">
+            <span class="hud-label">Gold</span>
+            <span id="hud-gold" class="hud-value gold-text">30</span>
+        </div>
+        <div class="hud-item">
+            <span id="hud-wave-status" class="hud-status">Ready</span>
+        </div>
+    </div>
+
+    <!-- Main game area -->
+    <div id="game-area">
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Upgrade Panel -->
+        <div id="upgrade-panel">
+            <h2 class="panel-title">Upgrades</h2>
+            <div id="upgrade-buttons"></div>
+            <button id="start-wave-btn" class="wave-btn">Start Wave</button>
+        </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over-overlay" class="hidden">
+        <div id="game-over-box">
+            <h1>Fortress Fallen</h1>
+            <p id="game-over-wave">You survived to Wave <span id="final-wave">1</span></p>
+            <p id="game-over-kills">Enemies slain: <span id="final-kills">0</span></p>
+            <p id="game-over-gold">Total gold earned: <span id="final-gold">0</span></p>
+            <button id="restart-btn" class="wave-btn">Fight Again</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

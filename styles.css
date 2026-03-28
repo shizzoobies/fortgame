@@ -1,0 +1,314 @@
+/* ============================================
+   Fortress Stand - Styles
+   Fantasy defense game UI
+   ============================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #1a1a2e;
+    color: #e0d8c8;
+    font-family: 'Segoe UI', 'Trebuchet MS', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- HUD Bar ---- */
+#hud {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    background: linear-gradient(180deg, #2a2a4a 0%, #1e1e38 100%);
+    border-bottom: 2px solid #3a3a5c;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    z-index: 10;
+    min-height: 52px;
+}
+
+.hud-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hud-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8888aa;
+    font-weight: 600;
+}
+
+.hud-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #e0d8c8;
+    text-shadow: 0 0 6px rgba(224, 216, 200, 0.3);
+}
+
+.gold-text {
+    color: #ffd700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+.hud-status {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    background: rgba(100, 200, 100, 0.15);
+    color: #88cc88;
+    border: 1px solid rgba(100, 200, 100, 0.3);
+}
+
+.hud-status.active {
+    background: rgba(255, 100, 80, 0.15);
+    color: #ff8866;
+    border-color: rgba(255, 100, 80, 0.3);
+}
+
+/* HP Bar in HUD */
+#hud-hp-bar {
+    position: relative;
+    width: 200px;
+    height: 22px;
+    background: #1a1a2e;
+    border-radius: 4px;
+    border: 1px solid #3a3a5c;
+    overflow: hidden;
+}
+
+#hud-hp-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(180deg, #55cc55 0%, #339933 100%);
+    border-radius: 3px;
+    transition: width 0.2s ease;
+}
+
+#hud-hp-fill.warning {
+    background: linear-gradient(180deg, #ddaa33 0%, #bb8822 100%);
+}
+
+#hud-hp-fill.critical {
+    background: linear-gradient(180deg, #dd4444 0%, #aa2222 100%);
+}
+
+#hud-hp-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    white-space: nowrap;
+}
+
+/* ---- Main Game Area ---- */
+#game-area {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+#game-canvas {
+    flex: 1;
+    display: block;
+    background: #16213e;
+}
+
+/* ---- Upgrade Panel ---- */
+#upgrade-panel {
+    width: 220px;
+    background: linear-gradient(180deg, #252545 0%, #1e1e38 100%);
+    border-left: 2px solid #3a3a5c;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.panel-title {
+    text-align: center;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #aaaacc;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #3a3a5c;
+    margin-bottom: 4px;
+}
+
+#upgrade-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+/* Upgrade button cards */
+.upgrade-btn {
+    background: linear-gradient(180deg, #2e2e52 0%, #252545 100%);
+    border: 1px solid #3a3a5c;
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    color: #e0d8c8;
+    font-family: inherit;
+}
+
+.upgrade-btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #383868 0%, #2e2e52 100%);
+    border-color: #5a5a8c;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.upgrade-btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.upgrade-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.upgrade-btn .upgrade-name {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.upgrade-btn .upgrade-cost {
+    color: #ffd700;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.upgrade-btn .upgrade-desc {
+    font-size: 11px;
+    color: #8888aa;
+    line-height: 1.3;
+}
+
+.upgrade-btn .upgrade-level {
+    font-size: 10px;
+    color: #6666aa;
+    margin-top: 2px;
+}
+
+/* ---- Wave Button ---- */
+.wave-btn {
+    background: linear-gradient(180deg, #44aa55 0%, #338844 100%);
+    border: 2px solid #55cc66;
+    border-radius: 6px;
+    padding: 12px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    margin-top: auto;
+}
+
+.wave-btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #55bb66 0%, #44aa55 100%);
+    box-shadow: 0 0 12px rgba(85, 204, 102, 0.3);
+    transform: translateY(-1px);
+}
+
+.wave-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.wave-btn:disabled {
+    background: linear-gradient(180deg, #3a3a5c 0%, #2a2a4a 100%);
+    border-color: #4a4a6c;
+    color: #6666aa;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* ---- Game Over Overlay ---- */
+#game-over-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.5s ease;
+}
+
+#game-over-overlay.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+#game-over-box {
+    background: linear-gradient(180deg, #2e2e52 0%, #1e1e38 100%);
+    border: 2px solid #5a5a8c;
+    border-radius: 12px;
+    padding: 40px 50px;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6), 0 0 80px rgba(90, 90, 140, 0.15);
+    animation: slideUp 0.5s ease;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+#game-over-box h1 {
+    font-size: 32px;
+    color: #ff6644;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 16px;
+    text-shadow: 0 0 10px rgba(255, 102, 68, 0.3);
+}
+
+#game-over-box p {
+    font-size: 16px;
+    color: #aaaacc;
+    margin-bottom: 8px;
+}
+
+#game-over-box p span {
+    color: #e0d8c8;
+    font-weight: 700;
+}
+
+#restart-btn {
+    margin-top: 24px;
+    padding: 14px 40px;
+    font-size: 18px;
+}
