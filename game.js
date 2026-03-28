@@ -655,6 +655,13 @@ class Fortress {
     }
 
     takeDamage(amount) {
+        // Shield absorbs damage first
+        if (game.shieldHP > 0) {
+            const absorbed = Math.min(amount, game.shieldHP);
+            game.shieldHP -= absorbed;
+            amount -= absorbed;
+            if (amount <= 0) return;
+        }
         this.hp = Math.max(0, this.hp - amount);
         this.hitFlash = 0.15;
         game.screenShake = 0.15;
@@ -955,7 +962,13 @@ const game = {
     totalGoldEarned: 0,
     totalKills: 0,
     mineLevel: 0,
-    mineAccum: 0, // accumulator for fractional gold
+    mineAccum: 0,
+    mageActive: false,
+    selectedAbility: null,
+    abilityCooldowns: { lightning: 0, meteor: 0, shield: 0 },
+    shieldHP: 0,
+    shieldTimer: 0,
+    abilityEffects: [],
     groundY: 0,
     state: 'idle', // idle, active, gameover
     screenShake: 0,
@@ -978,6 +991,12 @@ const game = {
         this.totalKills = 0;
         this.mineLevel = 0;
         this.mineAccum = 0;
+        this.mageActive = false;
+        this.selectedAbility = null;
+        this.abilityCooldowns = { lightning: 0, meteor: 0, shield: 0 };
+        this.shieldHP = 0;
+        this.shieldTimer = 0;
+        this.abilityEffects = []; // visual effects for abilities
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
@@ -1123,18 +1142,82 @@ const game = {
         mineBtn.addEventListener('click', () => this.buyMine());
         container.appendChild(mineBtn);
 
+        // Mage hero (only visible when all turrets owned)
+        const allTurretsOwned = Object.keys(CONFIG.turrets).every(k => this.fortress.ownedTurrets.includes(k));
+        if (allTurretsOwned && !this.mageActive) {
+            const mageHeader = document.createElement('div');
+            mageHeader.className = 'panel-section-header';
+            mageHeader.textContent = 'Hero';
+            container.appendChild(mageHeader);
+
+            const mageBtn = document.createElement('button');
+            mageBtn.className = 'upgrade-btn mage-btn';
+            mageBtn.innerHTML = `
+                <div class="upgrade-name">
+                    <span>Summon Mage</span>
+                    <span class="upgrade-cost">500g</span>
+                </div>
+                <div class="upgrade-desc">Endless waves + click abilities</div>
+            `;
+            mageBtn.addEventListener('click', () => this.buyMage());
+            mageBtn.disabled = this.gold < 500;
+            container.appendChild(mageBtn);
+        }
+
+        // Ability buttons (only when mage is active)
+        if (this.mageActive) {
+            const abilHeader = document.createElement('div');
+            abilHeader.className = 'panel-section-header';
+            abilHeader.textContent = 'Abilities';
+            container.appendChild(abilHeader);
+
+            const abilities = [
+                { key: 'lightning', name: 'Lightning (1)', desc: 'Chain bolt, 8s CD', color: '#55aaff' },
+                { key: 'meteor', name: 'Meteor (2)', desc: 'AOE blast, 15s CD', color: '#ff6633' },
+                { key: 'shield', name: 'Shield (3)', desc: 'Block 50 dmg, 20s CD', color: '#44ddff' },
+            ];
+            for (const ab of abilities) {
+                const btn = document.createElement('button');
+                btn.className = 'upgrade-btn ability-btn';
+                btn.dataset.ability = ab.key;
+                btn.style.borderLeftColor = ab.color;
+                btn.style.borderLeftWidth = '3px';
+                btn.innerHTML = `
+                    <div class="upgrade-name">
+                        <span>${ab.name}</span>
+                        <span class="upgrade-cost ability-cd">Ready</span>
+                    </div>
+                    <div class="upgrade-desc">${ab.desc}</div>
+                `;
+                btn.addEventListener('click', () => this.selectAbility(ab.key));
+                container.appendChild(btn);
+            }
+        }
+
         document.getElementById('start-wave-btn').addEventListener('click', () => this.startWave());
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
         document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
 
-        // Space key for speed toggle
-        if (!this._spaceListenerAdded) {
-            this._spaceListenerAdded = true;
+        // Keyboard listeners (only add once)
+        if (!this._keysAdded) {
+            this._keysAdded = true;
             document.addEventListener('keydown', (e) => {
-                if (e.code === 'Space' && e.target === document.body) {
-                    e.preventDefault();
-                    this.toggleSpeed();
-                }
+                if (e.target !== document.body) return;
+                if (e.code === 'Space') { e.preventDefault(); this.toggleSpeed(); }
+                if (e.code === 'Digit1' || e.code === 'Numpad1') this.selectAbility('lightning');
+                if (e.code === 'Digit2' || e.code === 'Numpad2') this.selectAbility('meteor');
+                if (e.code === 'Digit3' || e.code === 'Numpad3') this.selectAbility('shield');
+                if (e.code === 'Escape') { this.selectedAbility = null; canvas.style.cursor = 'default'; this.updateUI(); }
+            });
+            // Canvas click for abilities
+            canvas.addEventListener('click', (e) => {
+                if (!this.mageActive || !this.selectedAbility) return;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const cx = (e.clientX - rect.left) * scaleX;
+                const cy = (e.clientY - rect.top) * scaleY;
+                this.castAbility(cx, cy);
             });
         }
     },
@@ -1204,6 +1287,134 @@ const game = {
         this.updateUI();
     },
 
+    // Mage hero: enables endless mode + abilities
+    buyMage() {
+        if (this.state === 'gameover') return;
+        if (this.mageActive) return;
+        const allTurrets = Object.keys(CONFIG.turrets);
+        if (!allTurrets.every(k => this.fortress.ownedTurrets.includes(k))) return;
+        if (this.gold < 500) return;
+        this.gold -= 500;
+        this.mageActive = true;
+        // If idle, auto-start the next wave
+        if (this.state === 'idle') {
+            this.startWave();
+        }
+        this.setupUI();
+        this.updateUI();
+    },
+
+    selectAbility(type) {
+        if (!this.mageActive) return;
+        if (this.abilityCooldowns[type] > 0) return;
+        this.selectedAbility = this.selectedAbility === type ? null : type;
+        canvas.style.cursor = this.selectedAbility ? 'crosshair' : 'default';
+        this.updateUI();
+    },
+
+    castAbility(canvasX, canvasY) {
+        if (!this.mageActive || !this.selectedAbility) return;
+        const ability = this.selectedAbility;
+        if (this.abilityCooldowns[ability] > 0) return;
+
+        if (ability === 'lightning') {
+            this._castLightning(canvasX, canvasY);
+            this.abilityCooldowns.lightning = 8;
+        } else if (ability === 'meteor') {
+            this._castMeteor(canvasX, canvasY);
+            this.abilityCooldowns.meteor = 15;
+        } else if (ability === 'shield') {
+            this._castShield();
+            this.abilityCooldowns.shield = 20;
+        }
+        this.selectedAbility = null;
+        canvas.style.cursor = 'default';
+        this.updateUI();
+    },
+
+    _castLightning(cx, cy) {
+        // Find nearest enemy to click point
+        let targets = [];
+        let nearest = null;
+        let nearestDist = Infinity;
+        for (const e of this.enemies) {
+            if (e.dead) continue;
+            const dx = e.x - cx;
+            const dy = (e.y - e.height / 2) - cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearest = e;
+            }
+        }
+        if (!nearest) return;
+        targets.push(nearest);
+        nearest.takeDamage(30);
+
+        // Chain to up to 3 nearby enemies
+        for (let i = 0; i < 3; i++) {
+            const last = targets[targets.length - 1];
+            let chainTarget = null;
+            let chainDist = Infinity;
+            for (const e of this.enemies) {
+                if (e.dead || targets.includes(e)) continue;
+                const dx = e.x - last.x;
+                const dy = e.y - last.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 80 && dist < chainDist) {
+                    chainDist = dist;
+                    chainTarget = e;
+                }
+            }
+            if (chainTarget) {
+                targets.push(chainTarget);
+                chainTarget.takeDamage(30);
+            } else break;
+        }
+
+        // Visual: lightning bolt effect
+        this.abilityEffects.push({
+            type: 'lightning', targets: targets.map(t => ({ x: t.x, y: t.y - t.height / 2 })),
+            life: 0.4, maxLife: 0.4
+        });
+        this.screenShake = 0.1;
+    },
+
+    _castMeteor(cx, cy) {
+        const radius = 100;
+        // Damage all enemies in radius
+        for (const e of this.enemies) {
+            if (e.dead) continue;
+            const dx = e.x - cx;
+            const dy = (e.y - e.height / 2) - cy;
+            if (Math.sqrt(dx * dx + dy * dy) < radius) {
+                e.takeDamage(50);
+            }
+        }
+        // Visual: expanding ring
+        this.abilityEffects.push({
+            type: 'meteor', x: cx, y: cy, radius: radius,
+            life: 0.6, maxLife: 0.6
+        });
+        this.screenShake = 0.25;
+        // Particles
+        for (let i = 0; i < 15; i++) {
+            this.particles.push(new Particle(
+                cx + randRange(-30, 30), cy + randRange(-30, 30),
+                randRange(-80, 80), randRange(-100, -30),
+                randRange(0.4, 0.8), '#ff6633', randRange(3, 6)
+            ));
+        }
+    },
+
+    _castShield() {
+        this.shieldHP = 50;
+        this.shieldTimer = 5;
+        this.abilityEffects.push({
+            type: 'shield_flash', life: 0.3, maxLife: 0.3
+        });
+    },
+
     // Gold mine: passive income
     buyMine() {
         if (this.state === 'gameover') return;
@@ -1234,7 +1445,6 @@ const game = {
     },
 
     onWaveClear() {
-        this.state = 'idle';
         const bonus = CONFIG.economy.waveBonusBase + CONFIG.economy.waveBonusPerWave * this.waveManager.waveNum;
         this.gold += bonus;
         this.totalGoldEarned += bonus;
@@ -1255,6 +1465,14 @@ const game = {
                     `+${Math.floor(actual)} HP`, '#55cc55', 14
                 ));
             }
+        }
+
+        // Endless mode: auto-start next wave if mage is active
+        if (this.mageActive) {
+            this.waveManager.startWave();
+            // state stays 'active'
+        } else {
+            this.state = 'idle';
         }
         this.updateUI();
     },
@@ -1314,11 +1532,18 @@ const game = {
         this.totalKills = 0;
         this.mineLevel = 0;
         this.mineAccum = 0;
+        this.mageActive = false;
+        this.selectedAbility = null;
+        this.abilityCooldowns = { lightning: 0, meteor: 0, shield: 0 };
+        this.shieldHP = 0;
+        this.shieldTimer = 0;
+        this.abilityEffects = [];
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
         this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 };
         document.getElementById('game-over-overlay').classList.add('hidden');
+        canvas.style.cursor = 'default';
         this.setupUI();
         this._updateSpeedBtn();
         this.updateUI();
@@ -1402,6 +1627,33 @@ const game = {
                 this.mineLevel < 2 ? '+3g/s per level' : '+15% income per level';
             mineBtn.disabled = this.gold < mineCost || this.state === 'gameover';
         }
+
+        // Mage button
+        const mageBtn = document.querySelector('.mage-btn');
+        if (mageBtn) {
+            mageBtn.disabled = this.gold < 500 || this.state === 'gameover';
+        }
+
+        // Ability buttons
+        document.querySelectorAll('.ability-btn').forEach(btn => {
+            const key = btn.dataset.ability;
+            const cd = this.abilityCooldowns[key];
+            const cdEl = btn.querySelector('.ability-cd');
+            if (cd > 0) {
+                cdEl.textContent = Math.ceil(cd) + 's';
+                btn.disabled = true;
+                btn.classList.remove('ability-selected');
+            } else {
+                cdEl.textContent = 'Ready';
+                btn.disabled = false;
+                btn.classList.toggle('ability-selected', this.selectedAbility === key);
+            }
+        });
+
+        // Wave button in endless mode
+        if (this.mageActive && this.state === 'active') {
+            waveBtn.textContent = `Wave ${this.waveManager.waveNum} (Endless)`;
+        }
     },
 
     // ---- Game Loop ----
@@ -1419,6 +1671,19 @@ const game = {
 
         // Screen shake decay
         if (this.screenShake > 0) this.screenShake -= dt;
+
+        // Ability cooldowns
+        for (const key of Object.keys(this.abilityCooldowns)) {
+            if (this.abilityCooldowns[key] > 0) this.abilityCooldowns[key] -= dt;
+        }
+        // Shield timer
+        if (this.shieldTimer > 0) {
+            this.shieldTimer -= dt;
+            if (this.shieldTimer <= 0) { this.shieldHP = 0; this.shieldTimer = 0; }
+        }
+        // Ability visual effects
+        for (const fx of this.abilityEffects) fx.life -= dt;
+        this.abilityEffects = this.abilityEffects.filter(fx => fx.life > 0);
 
         // Update clouds
         for (const c of this.clouds) {
@@ -1636,7 +1901,141 @@ const game = {
         // Floating text
         for (const t of this.floatingTexts) t.draw(ctx);
 
+        // Ability effects
+        for (const fx of this.abilityEffects) {
+            const alpha = clamp(fx.life / fx.maxLife, 0, 1);
+            if (fx.type === 'lightning') {
+                ctx.globalAlpha = alpha;
+                ctx.strokeStyle = '#88ccff';
+                ctx.lineWidth = 3;
+                ctx.shadowColor = '#55aaff';
+                ctx.shadowBlur = 10;
+                for (let i = 0; i < fx.targets.length - 1; i++) {
+                    const a = fx.targets[i];
+                    const b = fx.targets[i + 1];
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    // Jagged bolt
+                    const mx = (a.x + b.x) / 2 + randRange(-15, 15);
+                    const my = (a.y + b.y) / 2 + randRange(-15, 15);
+                    ctx.lineTo(mx, my);
+                    ctx.lineTo(b.x, b.y);
+                    ctx.stroke();
+                }
+                // Flash on each target
+                for (const t of fx.targets) {
+                    ctx.fillStyle = `rgba(200, 230, 255, ${alpha * 0.6})`;
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 1;
+            } else if (fx.type === 'meteor') {
+                const progress = 1 - fx.life / fx.maxLife;
+                ctx.globalAlpha = alpha * 0.5;
+                // Expanding ring
+                ctx.strokeStyle = '#ff6633';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius * progress, 0, Math.PI * 2);
+                ctx.stroke();
+                // Inner glow
+                ctx.fillStyle = `rgba(255, 100, 30, ${alpha * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius * progress * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            } else if (fx.type === 'shield_flash') {
+                ctx.globalAlpha = alpha * 0.4;
+                ctx.fillStyle = '#44ddff';
+                const fx2 = this.fortress.x;
+                const fy = this.groundY - this.fortress.height / 2;
+                ctx.beginPath();
+                ctx.arc(fx2, fy, this.fortress.width * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Shield dome (persistent while active)
+        if (this.shieldHP > 0 && this.shieldTimer > 0) {
+            const shimmer = Math.sin(performance.now() / 200) * 0.1;
+            ctx.globalAlpha = 0.15 + shimmer;
+            ctx.fillStyle = '#44ddff';
+            const sx = this.fortress.x;
+            const sy = this.groundY - this.fortress.height / 2;
+            ctx.beginPath();
+            ctx.arc(sx, sy, this.fortress.width * 0.9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.4 + shimmer;
+            ctx.strokeStyle = '#44ddff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            // Shield HP text
+            ctx.fillStyle = '#44ddff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Shield: ${Math.ceil(this.shieldHP)}`, sx, sy - this.fortress.width * 0.9 - 5);
+        }
+
+        // Mage on tower
+        if (this.mageActive) {
+            this._drawMage(ctx, this.groundY);
+        }
+
         ctx.restore();
+    },
+
+    _drawMage(ctx, groundY) {
+        // Mage stands on the tallest tower (left tower)
+        const baseX = this.fortress.x - this.fortress.width / 2;
+        const towerH = this.fortress.height + 20;
+        const mx = baseX + 6;
+        const my = groundY - towerH - 8;
+
+        // Robe
+        ctx.fillStyle = '#6644aa';
+        ctx.beginPath();
+        ctx.moveTo(mx - 5, my);
+        ctx.lineTo(mx - 3, my - 14);
+        ctx.lineTo(mx + 3, my - 14);
+        ctx.lineTo(mx + 5, my);
+        ctx.closePath();
+        ctx.fill();
+        // Head
+        ctx.fillStyle = '#ddccaa';
+        ctx.beginPath();
+        ctx.arc(mx, my - 16, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Hat
+        ctx.fillStyle = '#5533aa';
+        ctx.beginPath();
+        ctx.moveTo(mx - 4, my - 15);
+        ctx.lineTo(mx, my - 25);
+        ctx.lineTo(mx + 4, my - 15);
+        ctx.closePath();
+        ctx.fill();
+        // Staff
+        ctx.strokeStyle = '#aa8844';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(mx + 4, my);
+        ctx.lineTo(mx + 4, my - 20);
+        ctx.stroke();
+        // Staff orb (glows based on selected ability)
+        const orbColor = this.selectedAbility === 'lightning' ? '#55aaff'
+            : this.selectedAbility === 'meteor' ? '#ff6633'
+            : this.selectedAbility === 'shield' ? '#44ddff' : '#aa88ff';
+        ctx.fillStyle = orbColor;
+        ctx.beginPath();
+        ctx.arc(mx + 4, my - 22, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = orbColor.replace(')', ', 0.3)').replace('rgb', 'rgba');
+        ctx.beginPath();
+        ctx.arc(mx + 4, my - 22, 6, 0, Math.PI * 2);
+        ctx.fill();
     },
 
     _drawMine(ctx, groundY) {

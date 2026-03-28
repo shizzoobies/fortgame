@@ -301,6 +301,17 @@ body {
     text-shadow: 0 0 6px rgba(255, 102, 68, 0.3);
 }
 
+/* ---- Ability Buttons ---- */
+.ability-btn.ability-selected {
+    background: linear-gradient(180deg, #3a3870 0%, #2e2e60 100%);
+    border-color: #7a7acc;
+    box-shadow: 0 0 8px rgba(120, 120, 200, 0.3);
+}
+
+.ability-btn:disabled .ability-cd {
+    color: #ff6666;
+}
+
 /* ---- Game Over Overlay ---- */
 #game-over-overlay {
     position: fixed;
