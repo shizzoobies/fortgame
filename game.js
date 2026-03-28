@@ -67,7 +67,7 @@ const CONFIG = {
         glowColor: 'rgba(255, 170, 50, 0.4)',
     },
     economy: {
-        startingGold: 30,
+        startingGold: 100,
         waveBonusBase: 15,
         waveBonusPerWave: 5,
     },
@@ -77,6 +77,7 @@ const CONFIG = {
         range: { name: 'Eagle Eye', desc: '+40 range per level', baseCost: 25, costScale: 1.5, perLevel: 40 },
         maxHp: { name: 'Fortify Walls', desc: '+30 max HP per level', baseCost: 30, costScale: 1.5, perLevel: 30 },
         repair: { name: 'Repair', desc: 'Restore 40 HP', baseCost: 20, costScale: 1.3, perLevel: 40 },
+        mason: { name: 'Mason', desc: 'Heals after waves (+mine: passive)', baseCost: 35, costScale: 1.6, perLevel: 1 },
     },
     turrets: {
         archer: {
@@ -269,7 +270,7 @@ class Enemy {
         this.hp = this.maxHp;
         this.speed = cfg.speed;
         this.damage = cfg.damage;
-        this.reward = cfg.reward;
+        this.reward = Math.floor(cfg.reward * (1 + (waveNum - 1) * 0.1)); // +10% gold per wave
         this.color = cfg.color;
         this.accentColor = cfg.accentColor;
         this.width = cfg.width;
@@ -817,7 +818,7 @@ const game = {
     groundY: 0,
     state: 'idle', // idle, active, gameover
     screenShake: 0,
-    upgradeLevels: { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 },
+    upgradeLevels: { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 },
     lastTime: 0,
     clouds: [],
     stars: [],
@@ -839,7 +840,7 @@ const game = {
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 };
         this._generateClouds();
         this._generateStars();
         this.setupUI();
@@ -1044,6 +1045,9 @@ const game = {
             case 'repair':
                 this.fortress.hp = Math.min(this.fortress.hp + cfg.perLevel, this.fortress.maxHp);
                 break;
+            case 'mason':
+                // Mason is passive — healing logic handled in onWaveClear and update loop
+                break;
         }
 
         this.updateUI();
@@ -1098,7 +1102,31 @@ const game = {
             `Wave ${this.waveManager.waveNum} Clear! +${bonus}g`,
             '#ffd700', 20
         ));
+
+        // Mason heals after each wave clear
+        if (this.upgradeLevels.mason > 0) {
+            const heal = this._getMasonHeal();
+            const actual = Math.min(heal, this.fortress.maxHp - this.fortress.hp);
+            if (actual > 0) {
+                this.fortress.hp += actual;
+                this.floatingTexts.push(new FloatingText(
+                    this.fortress.x, game.groundY - this.fortress.height - 20,
+                    `+${Math.floor(actual)} HP`, '#55cc55', 14
+                ));
+            }
+        }
         this.updateUI();
+    },
+
+    _getMasonHeal() {
+        // Base heal: 8 HP per mason level after each wave
+        return this.upgradeLevels.mason * 8;
+    },
+
+    _getMasonPassiveHeal() {
+        // Passive HP/sec when mine is built: 1 HP/sec per mason level
+        if (this.mineLevel <= 0) return 0;
+        return this.upgradeLevels.mason * 1;
     },
 
     onEnemyKill(enemy) {
@@ -1148,7 +1176,7 @@ const game = {
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 };
         document.getElementById('game-over-overlay').classList.add('hidden');
         this.setupUI();
         this._updateSpeedBtn();
@@ -1201,9 +1229,14 @@ const game = {
             const repairDisabled = key === 'repair' && this.fortress.hp >= this.fortress.maxHp;
             btn.disabled = !canAfford || this.state === 'gameover' || repairDisabled;
             btn.querySelector('.upgrade-cost').textContent = cost + 'g';
-            btn.querySelector('.upgrade-level').textContent = key === 'repair'
-                ? `HP: ${Math.ceil(this.fortress.hp)}/${this.fortress.maxHp}`
-                : `Level ${this.upgradeLevels[key]}`;
+            let levelText = `Level ${this.upgradeLevels[key]}`;
+            if (key === 'repair') levelText = `HP: ${Math.ceil(this.fortress.hp)}/${this.fortress.maxHp}`;
+            else if (key === 'mason') {
+                const ml = this.upgradeLevels.mason;
+                const passiveNote = this.mineLevel > 0 ? ` +${ml}hp/s` : '';
+                levelText = ml > 0 ? `Lv${ml} (+${ml * 8}hp/wave${passiveNote})` : 'Level 0';
+            }
+            btn.querySelector('.upgrade-level').textContent = levelText;
         });
 
         // Turret buttons
@@ -1323,6 +1356,15 @@ const game = {
                 this.gold += earned;
                 this.totalGoldEarned += earned;
                 this.mineAccum -= earned;
+                this.updateUI();
+            }
+        }
+
+        // Mason passive healing (only when mine is built)
+        if (this.upgradeLevels.mason > 0 && this.mineLevel > 0) {
+            const healRate = this._getMasonPassiveHeal();
+            if (healRate > 0 && this.fortress.hp < this.fortress.maxHp) {
+                this.fortress.hp = Math.min(this.fortress.hp + healRate * dt, this.fortress.maxHp);
                 this.updateUI();
             }
         }
