@@ -739,6 +739,7 @@ const game = {
         this.totalGoldEarned = 0;
         this.totalKills = 0;
         this.state = 'idle';
+        this.gameSpeed = 1;
         this.screenShake = 0;
         this.upgradeLevels = { damage: 0, attackSpeed: 0, maxHp: 0, repair: 0 };
         this._generateClouds();
@@ -838,6 +839,22 @@ const game = {
 
         document.getElementById('start-wave-btn').addEventListener('click', () => this.startWave());
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
+        document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
+    },
+
+    toggleSpeed() {
+        const speeds = [1, 2, 3];
+        const idx = speeds.indexOf(this.gameSpeed);
+        this.gameSpeed = speeds[(idx + 1) % speeds.length];
+        this._updateSpeedBtn();
+    },
+
+    _updateSpeedBtn() {
+        const btn = document.getElementById('speed-btn');
+        btn.textContent = `${this.gameSpeed}x Speed`;
+        btn.classList.remove('fast', 'fastest');
+        if (this.gameSpeed === 2) btn.classList.add('fast');
+        if (this.gameSpeed === 3) btn.classList.add('fastest');
     },
 
     _getUpgradeCost(key) {
@@ -846,7 +863,7 @@ const game = {
     },
 
     buyUpgrade(key) {
-        if (this.state === 'active') return;
+        if (this.state === 'gameover') return;
         const cost = this._getUpgradeCost(key);
         if (this.gold < cost) return;
 
@@ -937,10 +954,12 @@ const game = {
         this.totalGoldEarned = 0;
         this.totalKills = 0;
         this.state = 'idle';
+        this.gameSpeed = 1;
         this.screenShake = 0;
         this.upgradeLevels = { damage: 0, attackSpeed: 0, maxHp: 0, repair: 0 };
         document.getElementById('game-over-overlay').classList.add('hidden');
         this.setupUI();
+        this._updateSpeedBtn();
         this.updateUI();
         this.lastTime = performance.now();
         this._startLoop();
@@ -985,12 +1004,12 @@ const game = {
         buttons.forEach(btn => {
             const key = btn.dataset.upgrade;
             const cost = this._getUpgradeCost(key);
-            const canAfford = this.gold >= cost && this.state === 'idle';
+            const canAfford = this.gold >= cost && this.state !== 'gameover';
 
             // Disable repair if at full HP
             const repairDisabled = key === 'repair' && this.fortress.hp >= this.fortress.maxHp;
 
-            btn.disabled = !canAfford || this.state !== 'idle' || repairDisabled;
+            btn.disabled = !canAfford || this.state === 'gameover' || repairDisabled;
             btn.querySelector('.upgrade-cost').textContent = cost + 'g';
             btn.querySelector('.upgrade-level').textContent = key === 'repair'
                 ? `HP: ${Math.ceil(this.fortress.hp)}/${this.fortress.maxHp}`
@@ -1000,8 +1019,9 @@ const game = {
 
     // ---- Game Loop ----
     loop(now) {
-        const dt = Math.min((now - this.lastTime) / 1000, 0.05);
+        const rawDt = Math.min((now - this.lastTime) / 1000, 0.05);
         this.lastTime = now;
+        const dt = rawDt * this.gameSpeed;
 
         this.update(dt);
         this.render();

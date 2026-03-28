@@ -251,6 +251,41 @@ body {
     box-shadow: none;
 }
 
+/* ---- Speed Button ---- */
+.speed-btn {
+    background: linear-gradient(180deg, #2e2e52 0%, #252545 100%);
+    border: 2px solid #5a5a8c;
+    border-radius: 6px;
+    padding: 8px;
+    color: #aaaacc;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    margin-top: 6px;
+}
+
+.speed-btn:hover {
+    background: linear-gradient(180deg, #383868 0%, #2e2e52 100%);
+    border-color: #7a7aac;
+    color: #e0d8c8;
+}
+
+.speed-btn.fast {
+    color: #ffaa33;
+    border-color: #cc8822;
+    text-shadow: 0 0 6px rgba(255, 170, 50, 0.3);
+}
+
+.speed-btn.fastest {
+    color: #ff6644;
+    border-color: #cc4422;
+    text-shadow: 0 0 6px rgba(255, 102, 68, 0.3);
+}
+
 /* ---- Game Over Overlay ---- */
 #game-over-overlay {
     position: fixed;
