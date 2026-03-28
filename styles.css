@@ -252,6 +252,19 @@ body {
 }
 
 /* ---- Speed Button ---- */
+/* ---- Panel Section Headers ---- */
+.panel-section-header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #6666aa;
+    padding: 8px 0 4px 0;
+    border-top: 1px solid #3a3a5c;
+    margin-top: 4px;
+    text-align: center;
+}
+
+/* ---- Speed Button ---- */
 .speed-btn {
     background: linear-gradient(180deg, #2e2e52 0%, #252545 100%);
     border: 2px solid #5a5a8c;

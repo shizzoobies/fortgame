@@ -74,8 +74,29 @@ const CONFIG = {
     upgrades: {
         damage: { name: 'Forge Weapons', desc: '+5 damage per level', baseCost: 20, costScale: 1.5, perLevel: 5 },
         attackSpeed: { name: 'Swift Arms', desc: '+0.3 fire rate per level', baseCost: 25, costScale: 1.5, perLevel: 0.3 },
+        range: { name: 'Eagle Eye', desc: '+40 range per level', baseCost: 25, costScale: 1.5, perLevel: 40 },
         maxHp: { name: 'Fortify Walls', desc: '+30 max HP per level', baseCost: 30, costScale: 1.5, perLevel: 30 },
         repair: { name: 'Repair', desc: 'Restore 40 HP', baseCost: 20, costScale: 1.3, perLevel: 40 },
+    },
+    turrets: {
+        archer: {
+            name: 'Archer Tower', desc: 'Fast shots, medium range',
+            cost: 50, damage: 6, attackSpeed: 2.0, range: 240,
+            color: '#ffaa33', glowColor: 'rgba(255, 170, 50, 0.4)',
+            towerColor: '#7a6a5e',
+        },
+        cannon: {
+            name: 'Cannon Tower', desc: 'Heavy damage, short range',
+            cost: 80, damage: 20, attackSpeed: 0.5, range: 180,
+            color: '#ff4433', glowColor: 'rgba(255, 68, 51, 0.4)',
+            towerColor: '#5a5a6e',
+        },
+        mage: {
+            name: 'Mage Tower', desc: 'Magic bolts, long range',
+            cost: 120, damage: 12, attackSpeed: 1.2, range: 340,
+            color: '#8855ff', glowColor: 'rgba(136, 85, 255, 0.4)',
+            towerColor: '#5a4a7e',
+        },
     },
     waves: {
         baseEnemyCount: 5,
@@ -166,13 +187,15 @@ class FloatingText {
 
 // ---- Projectile ----
 class Projectile {
-    constructor(x, y, target, damage) {
+    constructor(x, y, target, damage, color, glowColor) {
         this.x = x;
         this.y = y;
         this.target = target;
         this.damage = damage;
         this.speed = CONFIG.projectile.speed;
         this.radius = CONFIG.projectile.radius;
+        this.color = color || CONFIG.projectile.color;
+        this.glowColor = glowColor || CONFIG.projectile.glowColor;
         this.alive = true;
         this.trail = [];
     }
@@ -210,7 +233,7 @@ class Projectile {
             const alpha = (i / this.trail.length) * 0.4;
             const r = this.radius * (i / this.trail.length) * 0.8;
             ctx.globalAlpha = alpha;
-            ctx.fillStyle = CONFIG.projectile.color;
+            ctx.fillStyle = this.color;
             ctx.beginPath();
             ctx.arc(this.trail[i].x, this.trail[i].y, r, 0, Math.PI * 2);
             ctx.fill();
@@ -218,13 +241,13 @@ class Projectile {
         ctx.globalAlpha = 1;
 
         // Glow
-        ctx.fillStyle = CONFIG.projectile.glowColor;
+        ctx.fillStyle = this.glowColor;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius * 3, 0, Math.PI * 2);
         ctx.fill();
 
         // Core
-        ctx.fillStyle = CONFIG.projectile.color;
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -454,13 +477,25 @@ class Fortress {
         this.attackSpeed = CONFIG.fortress.attackSpeed;
         this.range = CONFIG.fortress.range;
         this.x = CONFIG.fortress.x;
-        this.width = CONFIG.fortress.width;
-        this.height = CONFIG.fortress.height;
+        this.baseWidth = CONFIG.fortress.width;
+        this.baseHeight = CONFIG.fortress.height;
         this.attackCooldown = 0;
         this.hitFlash = 0;
         this.recoil = 0;
         this.bannerPhase = 0;
+        // Turret system: starts with one default turret
+        this.turrets = [
+            { type: 'default', damage: this.damage, attackSpeed: this.attackSpeed,
+              range: this.range, cooldown: 0, recoil: 0,
+              color: CONFIG.projectile.color, glowColor: CONFIG.projectile.glowColor,
+              towerColor: '#7a6a5e' }
+        ];
+        this.ownedTurrets = []; // track purchased turret type keys
     }
+
+    // Dynamic width/height based on turret count
+    get width() { return this.baseWidth + Math.max(0, this.turrets.length - 1) * 25; }
+    get height() { return this.baseHeight + Math.max(0, this.turrets.length - 1) * 10; }
 
     reset() {
         this.maxHp = CONFIG.fortress.maxHp;
@@ -471,6 +506,24 @@ class Fortress {
         this.attackCooldown = 0;
         this.hitFlash = 0;
         this.recoil = 0;
+        this.turrets = [
+            { type: 'default', damage: this.damage, attackSpeed: this.attackSpeed,
+              range: this.range, cooldown: 0, recoil: 0,
+              color: CONFIG.projectile.color, glowColor: CONFIG.projectile.glowColor,
+              towerColor: '#7a6a5e' }
+        ];
+        this.ownedTurrets = [];
+    }
+
+    addTurret(typeKey) {
+        const cfg = CONFIG.turrets[typeKey];
+        this.turrets.push({
+            type: typeKey, damage: cfg.damage, attackSpeed: cfg.attackSpeed,
+            range: cfg.range, cooldown: 0, recoil: 0,
+            color: cfg.color, glowColor: cfg.glowColor,
+            towerColor: cfg.towerColor,
+        });
+        this.ownedTurrets.push(typeKey);
     }
 
     takeDamage(amount) {
@@ -480,40 +533,70 @@ class Fortress {
     }
 
     update(dt, enemies) {
-        this.attackCooldown -= dt;
         if (this.hitFlash > 0) this.hitFlash -= dt;
-        if (this.recoil > 0) this.recoil -= dt * 8;
         this.bannerPhase += dt * 2;
 
-        // Find nearest enemy in range
-        if (this.attackCooldown <= 0) {
-            let nearest = null;
-            let nearestDist = Infinity;
-            for (const e of enemies) {
-                if (e.dead) continue;
-                const dist = e.x - this.x;
-                if (dist > 0 && dist < this.range && dist < nearestDist) {
-                    nearestDist = dist;
-                    nearest = e;
+        // Update default turret stats to match fortress upgrades
+        const def = this.turrets[0];
+        if (def && def.type === 'default') {
+            def.damage = this.damage;
+            def.attackSpeed = this.attackSpeed;
+            def.range = this.range;
+        }
+
+        // Each turret attacks independently
+        for (let ti = 0; ti < this.turrets.length; ti++) {
+            const t = this.turrets[ti];
+            t.cooldown -= dt;
+            if (t.recoil > 0) t.recoil -= dt * 8;
+
+            // Effective range: turret base range + any range upgrades beyond default
+            const rangeBonus = this.range - CONFIG.fortress.range;
+            const effectiveRange = (t.type === 'default') ? this.range : t.range + rangeBonus;
+
+            if (t.cooldown <= 0) {
+                let nearest = null;
+                let nearestDist = Infinity;
+                for (const e of enemies) {
+                    if (e.dead) continue;
+                    const dist = e.x - this.x;
+                    if (dist > 0 && dist < effectiveRange && dist < nearestDist) {
+                        nearestDist = dist;
+                        nearest = e;
+                    }
+                }
+                if (nearest) {
+                    t.cooldown = 1 / t.attackSpeed;
+                    t.recoil = 1;
+                    const pos = this._getTurretFirePos(ti);
+                    game.projectiles.push(new Projectile(pos.x, pos.y, nearest, t.damage, t.color, t.glowColor));
                 }
             }
-            if (nearest) {
-                this.attackCooldown = 1 / this.attackSpeed;
-                this.recoil = 1;
-                // Create projectile from turret
-                const projX = this.x + this.width / 2 + 5;
-                const projY = game.groundY - this.height - 10;
-                game.projectiles.push(new Projectile(projX, projY, nearest, this.damage));
-            }
+        }
+    }
+
+    // Get the firing position for turret at index ti
+    _getTurretFirePos(ti) {
+        const baseX = this.x - this.width / 2;
+        const baseY = game.groundY;
+        const towerW = 22;
+        if (ti === 0) {
+            // Default turret (rightmost tower)
+            const turretX = baseX + this.width - 17;
+            const turretH = this.height + 30;
+            return { x: turretX + towerW + 4, y: baseY - turretH + 14 };
+        } else {
+            // Additional turrets placed along the wall from right to left
+            const spacing = 28;
+            const tx = baseX + this.width - 17 - ti * spacing;
+            const turretH = this.height + 15 + ti * 5;
+            return { x: tx + towerW + 4, y: baseY - turretH + 14 };
         }
     }
 
     draw(ctx, groundY) {
         const baseX = this.x - this.width / 2;
         const baseY = groundY;
-        const recoilOffset = this.recoil * 3;
-
-        // Flash overlay
         const flash = this.hitFlash > 0;
 
         // Main wall
@@ -525,13 +608,14 @@ class Fortress {
         // Stone texture lines
         ctx.strokeStyle = wallDark;
         ctx.lineWidth = 1;
-        for (let row = 0; row < 5; row++) {
+        const maxRows = Math.floor(this.height / 20);
+        for (let row = 0; row < maxRows; row++) {
             const ry = baseY - 15 - row * 20;
+            if (ry < baseY - this.height + 10) break;
             ctx.beginPath();
             ctx.moveTo(baseX + 12, ry);
             ctx.lineTo(baseX + this.width - 12, ry);
             ctx.stroke();
-            // Vertical joints offset per row
             const offset = row % 2 === 0 ? 0 : 12;
             for (let col = offset; col < this.width - 24; col += 24) {
                 ctx.beginPath();
@@ -541,44 +625,55 @@ class Fortress {
             }
         }
 
-        // Left tower
+        // Left tower (always present)
         const towerW = 22;
         const towerH = this.height + 20;
         ctx.fillStyle = flash ? '#ff9977' : '#7a6a5e';
         ctx.fillRect(baseX - 5, baseY - towerH, towerW, towerH);
-        // Tower battlement
         ctx.fillStyle = flash ? '#ffaa88' : '#8a7a6e';
         for (let i = 0; i < 3; i++) {
             ctx.fillRect(baseX - 5 + i * 8, baseY - towerH - 8, 6, 8);
         }
 
-        // Right tower / turret
-        const turretX = baseX + this.width - 17 - recoilOffset;
-        const turretH = this.height + 30;
-        ctx.fillStyle = flash ? '#ff9977' : '#7a6a5e';
-        ctx.fillRect(turretX, baseY - turretH, towerW, turretH);
-        // Turret battlements
-        ctx.fillStyle = flash ? '#ffaa88' : '#8a7a6e';
-        for (let i = 0; i < 3; i++) {
-            ctx.fillRect(turretX + i * 8, baseY - turretH - 8, 6, 8);
+        // Draw each turret tower (right to left)
+        for (let ti = 0; ti < this.turrets.length; ti++) {
+            const t = this.turrets[ti];
+            const recoilOff = t.recoil * 3;
+            const spacing = 28;
+            let tx, th;
+            if (ti === 0) {
+                tx = baseX + this.width - 17 - recoilOff;
+                th = this.height + 30;
+            } else {
+                tx = baseX + this.width - 17 - ti * spacing - recoilOff;
+                th = this.height + 15 + ti * 5;
+            }
+            // Tower body
+            ctx.fillStyle = flash ? '#ff9977' : t.towerColor;
+            ctx.fillRect(tx, baseY - th, towerW, th);
+            // Battlements
+            ctx.fillStyle = flash ? '#ffaa88' : '#8a7a6e';
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(tx + i * 8, baseY - th - 8, 6, 8);
+            }
+            // Cannon slit (colored by turret type)
+            ctx.fillStyle = flash ? '#ffcc99' : t.color;
+            ctx.fillRect(tx + towerW - 2, baseY - th + 12, 8, 5);
+            // Glow
+            ctx.fillStyle = t.glowColor;
+            ctx.beginPath();
+            ctx.arc(tx + towerW + 4, baseY - th + 14, 8, 0, Math.PI * 2);
+            ctx.fill();
         }
-        // Cannon/firing slit
-        ctx.fillStyle = flash ? '#ffcc99' : '#ffaa33';
-        ctx.fillRect(turretX + towerW - 2, baseY - turretH + 12, 8, 5);
-        // Glow on cannon
-        ctx.fillStyle = 'rgba(255, 170, 50, 0.3)';
-        ctx.beginPath();
-        ctx.arc(turretX + towerW + 4, baseY - turretH + 14, 8, 0, Math.PI * 2);
-        ctx.fill();
 
         // Gate
         ctx.fillStyle = flash ? '#aa4422' : '#3a2a1e';
         const gateW = 18;
         const gateH = 28;
-        ctx.fillRect(baseX + this.width / 2 - gateW / 2 + 5, baseY - gateH, gateW, gateH);
-        // Gate arch
+        const gateX = baseX + 30;
+        ctx.fillRect(gateX - gateW / 2, baseY - gateH, gateW, gateH);
         ctx.beginPath();
-        ctx.arc(baseX + this.width / 2 + 5, baseY - gateH, gateW / 2, Math.PI, 0);
+        ctx.arc(gateX, baseY - gateH, gateW / 2, Math.PI, 0);
         ctx.fill();
 
         // Banner on left tower
@@ -593,7 +688,6 @@ class Fortress {
         ctx.lineTo(bannerX, bannerY + 10);
         ctx.closePath();
         ctx.fill();
-        // Banner pole
         ctx.strokeStyle = '#555';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -601,7 +695,7 @@ class Fortress {
         ctx.lineTo(bannerX, bannerY - 8);
         ctx.stroke();
 
-        // Range indicator (faint)
+        // Range indicator
         ctx.strokeStyle = 'rgba(255, 170, 50, 0.08)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
@@ -718,10 +812,12 @@ const game = {
     gold: CONFIG.economy.startingGold,
     totalGoldEarned: 0,
     totalKills: 0,
+    mineLevel: 0,
+    mineAccum: 0, // accumulator for fractional gold
     groundY: 0,
     state: 'idle', // idle, active, gameover
     screenShake: 0,
-    upgradeLevels: { damage: 0, attackSpeed: 0, maxHp: 0, repair: 0 },
+    upgradeLevels: { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 },
     lastTime: 0,
     clouds: [],
     stars: [],
@@ -738,10 +834,12 @@ const game = {
         this.gold = CONFIG.economy.startingGold;
         this.totalGoldEarned = 0;
         this.totalKills = 0;
+        this.mineLevel = 0;
+        this.mineAccum = 0;
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, maxHp: 0, repair: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 };
         this._generateClouds();
         this._generateStars();
         this.setupUI();
@@ -821,6 +919,7 @@ const game = {
         const container = document.getElementById('upgrade-buttons');
         container.innerHTML = '';
 
+        // Stat upgrades
         for (const [key, cfg] of Object.entries(CONFIG.upgrades)) {
             const btn = document.createElement('button');
             btn.className = 'upgrade-btn';
@@ -837,9 +936,65 @@ const game = {
             container.appendChild(btn);
         }
 
+        // Weapons section
+        const weaponHeader = document.createElement('div');
+        weaponHeader.className = 'panel-section-header';
+        weaponHeader.textContent = 'Weapons';
+        container.appendChild(weaponHeader);
+
+        for (const [key, cfg] of Object.entries(CONFIG.turrets)) {
+            const btn = document.createElement('button');
+            btn.className = 'upgrade-btn turret-btn';
+            btn.dataset.turret = key;
+            const owned = this.fortress.ownedTurrets.includes(key);
+            btn.innerHTML = `
+                <div class="upgrade-name">
+                    <span>${cfg.name}</span>
+                    <span class="upgrade-cost">${owned ? 'Owned' : cfg.cost + 'g'}</span>
+                </div>
+                <div class="upgrade-desc">${cfg.desc}</div>
+            `;
+            btn.style.borderLeftColor = cfg.color;
+            btn.style.borderLeftWidth = '3px';
+            if (owned) btn.disabled = true;
+            btn.addEventListener('click', () => this.buyTurret(key));
+            container.appendChild(btn);
+        }
+
+        // Gold Mine section
+        const mineHeader = document.createElement('div');
+        mineHeader.className = 'panel-section-header';
+        mineHeader.textContent = 'Economy';
+        container.appendChild(mineHeader);
+
+        const mineBtn = document.createElement('button');
+        mineBtn.className = 'upgrade-btn mine-btn';
+        mineBtn.dataset.upgrade = 'mine';
+        mineBtn.innerHTML = `
+            <div class="upgrade-name">
+                <span>Gold Mine</span>
+                <span class="upgrade-cost">${this._getMineCost()}g</span>
+            </div>
+            <div class="upgrade-desc">+2 gold/sec per level</div>
+            <div class="upgrade-level">Level ${this.mineLevel}</div>
+        `;
+        mineBtn.addEventListener('click', () => this.buyMine());
+        container.appendChild(mineBtn);
+
         document.getElementById('start-wave-btn').addEventListener('click', () => this.startWave());
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
         document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
+
+        // Space key for speed toggle
+        if (!this._spaceListenerAdded) {
+            this._spaceListenerAdded = true;
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && e.target === document.body) {
+                    e.preventDefault();
+                    this.toggleSpeed();
+                }
+            });
+        }
     },
 
     toggleSpeed() {
@@ -851,7 +1006,7 @@ const game = {
 
     _updateSpeedBtn() {
         const btn = document.getElementById('speed-btn');
-        btn.textContent = `${this.gameSpeed}x Speed`;
+        btn.textContent = `${this.gameSpeed}x Speed (Space)`;
         btn.classList.remove('fast', 'fastest');
         if (this.gameSpeed === 2) btn.classList.add('fast');
         if (this.gameSpeed === 3) btn.classList.add('fastest');
@@ -878,6 +1033,9 @@ const game = {
             case 'attackSpeed':
                 this.fortress.attackSpeed += cfg.perLevel;
                 break;
+            case 'range':
+                this.fortress.range += cfg.perLevel;
+                break;
             case 'maxHp':
                 this.fortress.maxHp += cfg.perLevel;
                 this.fortress.hp += Math.floor(cfg.perLevel / 2); // heal a bit too
@@ -889,6 +1047,34 @@ const game = {
         }
 
         this.updateUI();
+    },
+
+    buyTurret(typeKey) {
+        if (this.state === 'gameover') return;
+        if (this.fortress.ownedTurrets.includes(typeKey)) return;
+        const cfg = CONFIG.turrets[typeKey];
+        if (this.gold < cfg.cost) return;
+        this.gold -= cfg.cost;
+        this.fortress.addTurret(typeKey);
+        this.updateUI();
+    },
+
+    // Gold mine: passive income
+    buyMine() {
+        if (this.state === 'gameover') return;
+        const cost = this._getMineCost();
+        if (this.gold < cost) return;
+        this.gold -= cost;
+        this.mineLevel++;
+        this.updateUI();
+    },
+
+    _getMineCost() {
+        return Math.floor(60 * Math.pow(1.8, this.mineLevel));
+    },
+
+    _getMineIncome() {
+        return this.mineLevel * 2; // 2 gold/sec per level
     },
 
     startWave() {
@@ -953,10 +1139,12 @@ const game = {
         this.gold = CONFIG.economy.startingGold;
         this.totalGoldEarned = 0;
         this.totalKills = 0;
+        this.mineLevel = 0;
+        this.mineAccum = 0;
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, maxHp: 0, repair: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0 };
         document.getElementById('game-over-overlay').classList.add('hidden');
         this.setupUI();
         this._updateSpeedBtn();
@@ -999,22 +1187,39 @@ const game = {
             ? `Start Wave ${this.waveManager.waveNum + 1}`
             : (this.state === 'active' ? 'Wave in Progress...' : 'Game Over');
 
-        // Upgrade buttons
-        const buttons = document.querySelectorAll('.upgrade-btn');
+        // Stat upgrade buttons
+        const buttons = document.querySelectorAll('.upgrade-btn:not(.turret-btn):not(.mine-btn)');
         buttons.forEach(btn => {
             const key = btn.dataset.upgrade;
+            if (!key) return;
             const cost = this._getUpgradeCost(key);
             const canAfford = this.gold >= cost && this.state !== 'gameover';
-
-            // Disable repair if at full HP
             const repairDisabled = key === 'repair' && this.fortress.hp >= this.fortress.maxHp;
-
             btn.disabled = !canAfford || this.state === 'gameover' || repairDisabled;
             btn.querySelector('.upgrade-cost').textContent = cost + 'g';
             btn.querySelector('.upgrade-level').textContent = key === 'repair'
                 ? `HP: ${Math.ceil(this.fortress.hp)}/${this.fortress.maxHp}`
                 : `Level ${this.upgradeLevels[key]}`;
         });
+
+        // Turret buttons
+        document.querySelectorAll('.turret-btn').forEach(btn => {
+            const key = btn.dataset.turret;
+            const cfg = CONFIG.turrets[key];
+            const owned = this.fortress.ownedTurrets.includes(key);
+            btn.querySelector('.upgrade-cost').textContent = owned ? 'Owned' : cfg.cost + 'g';
+            btn.disabled = owned || this.gold < cfg.cost || this.state === 'gameover';
+        });
+
+        // Mine button
+        const mineBtn = document.querySelector('.mine-btn');
+        if (mineBtn) {
+            const mineCost = this._getMineCost();
+            mineBtn.querySelector('.upgrade-cost').textContent = mineCost + 'g';
+            mineBtn.querySelector('.upgrade-level').textContent =
+                this.mineLevel > 0 ? `Level ${this.mineLevel} (+${this._getMineIncome()}g/s)` : 'Level 0';
+            mineBtn.disabled = this.gold < mineCost || this.state === 'gameover';
+        }
     },
 
     // ---- Game Loop ----
@@ -1098,6 +1303,18 @@ const game = {
 
         // Wave manager
         this.waveManager.update(dt);
+
+        // Gold mine passive income
+        if (this.mineLevel > 0) {
+            this.mineAccum += this._getMineIncome() * dt;
+            if (this.mineAccum >= 1) {
+                const earned = Math.floor(this.mineAccum);
+                this.gold += earned;
+                this.totalGoldEarned += earned;
+                this.mineAccum -= earned;
+                this.updateUI();
+            }
+        }
     },
 
     render() {
@@ -1187,6 +1404,12 @@ const game = {
 
         // ---- Game Objects ----
         // Fortress
+        // Gold mine (drawn behind fortress)
+        if (this.mineLevel > 0) {
+            this._drawMine(ctx, this.groundY);
+        }
+
+        // Fortress
         this.fortress.draw(ctx, this.groundY);
 
         // Enemies
@@ -1202,6 +1425,40 @@ const game = {
         for (const t of this.floatingTexts) t.draw(ctx);
 
         ctx.restore();
+    },
+
+    _drawMine(ctx, groundY) {
+        const mineX = this.fortress.x - this.fortress.width / 2 - 35;
+        const mineY = groundY;
+        const lvl = this.mineLevel;
+        const mineW = 20 + lvl * 6;
+        const mineH = 18 + lvl * 4;
+
+        // Mine shaft
+        ctx.fillStyle = '#4a3a2a';
+        ctx.fillRect(mineX - mineW / 2, mineY - mineH, mineW, mineH);
+        // Roof
+        ctx.fillStyle = '#5a4a3a';
+        ctx.beginPath();
+        ctx.moveTo(mineX - mineW / 2 - 4, mineY - mineH);
+        ctx.lineTo(mineX, mineY - mineH - 10 - lvl * 2);
+        ctx.lineTo(mineX + mineW / 2 + 4, mineY - mineH);
+        ctx.closePath();
+        ctx.fill();
+        // Entrance
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(mineX - 5, mineY - 12, 10, 12);
+        // Gold sparkle
+        const sparkle = (Math.sin(performance.now() / 200) + 1) / 2;
+        ctx.fillStyle = `rgba(255, 215, 0, ${0.3 + sparkle * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(mineX, mineY - 6, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Income label
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`+${this._getMineIncome()}g/s`, mineX, mineY - mineH - 12 - lvl * 2);
     },
 };
 
