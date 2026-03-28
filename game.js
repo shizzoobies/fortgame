@@ -791,9 +791,9 @@ class WaveManager {
         }
 
         // Check wave completion
-        if (this.spawnQueue.length === 0) {
-            const allDead = game.enemies.every(e => e.dead);
-            if (allDead && this.totalSpawned > 0) {
+        if (this.spawnQueue.length === 0 && this.totalSpawned > 0) {
+            const allDead = game.enemies.length === 0 || game.enemies.every(e => e.dead);
+            if (allDead) {
                 this.active = false;
                 game.onWaveClear();
             }
@@ -1276,7 +1276,7 @@ const game = {
             }
         }
 
-        // Clean up dead enemies and give rewards
+        // Give rewards for dead enemies
         for (const e of this.enemies) {
             if (e.dead && !e._rewarded) {
                 e._rewarded = true;
@@ -1285,9 +1285,8 @@ const game = {
                 }
             }
         }
-        this.enemies = this.enemies.filter(e => !(e.dead));
 
-        // Projectiles
+        // Projectiles (can kill more enemies this frame)
         for (const p of this.projectiles) {
             p.update(dt);
         }
@@ -1301,8 +1300,12 @@ const game = {
         for (const t of this.floatingTexts) t.update(dt);
         this.floatingTexts = this.floatingTexts.filter(t => !t.dead);
 
-        // Wave manager
+        // Wave manager checks completion (must run before dead enemy cleanup
+        // so it can see all enemies including ones killed this frame)
         this.waveManager.update(dt);
+
+        // Now remove dead enemies
+        this.enemies = this.enemies.filter(e => !e.dead);
 
         // Gold mine passive income
         if (this.mineLevel > 0) {
