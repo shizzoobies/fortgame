@@ -104,6 +104,9 @@ const CONFIG = {
         maxHp: { name: 'Fortify Walls', desc: '+30 max HP per level', baseCost: 30, costScale: 1.5, perLevel: 30 },
         repair: { name: 'Repair', desc: 'Restore 40 HP', baseCost: 20, costScale: 1.3, perLevel: 40 },
         mason: { name: 'Mason', desc: 'Heals after waves (+mine: passive)', baseCost: 35, costScale: 1.6, perLevel: 1 },
+        magePower: { name: 'Arcane Power', desc: '+20% ability damage', baseCost: 80, costScale: 1.6, perLevel: 0.2 },
+        mageCooldown: { name: 'Chronomancy', desc: '-10% cooldowns', baseCost: 100, costScale: 1.7, perLevel: 0.1 },
+        mageShield: { name: 'Ward Mastery', desc: '+25 shield HP & +2s duration', baseCost: 90, costScale: 1.5, perLevel: 1 },
     },
     turrets: {
         archer: {
@@ -133,6 +136,203 @@ const CONFIG = {
         bossWaveInterval: 5, // boss every N waves
     },
 };
+
+// ---- Audio System ----
+const audio = {
+    ctx: null, // Web Audio context (lazy init on first interaction)
+    musicVolume: 0.4,
+    sfxVolume: 0.5,
+    muted: false,
+    currentTrack: null,
+    tracks: {
+        menu: new Audio('Assets/Music/Menu.mp3'),
+        gameplay: new Audio('Assets/Music/Main Gameplay.mp3'),
+        endless: new Audio('Assets/Music/Endless Waves.mp3'),
+    },
+
+    init() {
+        for (const t of Object.values(this.tracks)) {
+            t.loop = true;
+            t.volume = this.musicVolume;
+        }
+    },
+
+    _ensureCtx() {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        return this.ctx;
+    },
+
+    playMusic(trackName) {
+        if (this.currentTrack === trackName) return;
+        // Fade out current
+        for (const [name, t] of Object.entries(this.tracks)) {
+            if (name !== trackName) { t.pause(); t.currentTime = 0; }
+        }
+        this.currentTrack = trackName;
+        const track = this.tracks[trackName];
+        if (track && !this.muted) {
+            track.volume = this.musicVolume;
+            track.play().catch(() => {});
+        }
+    },
+
+    stopMusic() {
+        for (const t of Object.values(this.tracks)) { t.pause(); t.currentTime = 0; }
+        this.currentTrack = null;
+    },
+
+    setMuted(muted) {
+        this.muted = muted;
+        if (muted) {
+            for (const t of Object.values(this.tracks)) t.pause();
+        } else if (this.currentTrack) {
+            this.tracks[this.currentTrack].play().catch(() => {});
+        }
+    },
+
+    // Generated sound effects using Web Audio API
+    playSfx(type) {
+        if (this.muted) return;
+        try {
+            const ctx = this._ensureCtx();
+            const now = ctx.currentTime;
+            const gain = ctx.createGain();
+            gain.connect(ctx.destination);
+            gain.gain.value = this.sfxVolume;
+
+            if (type === 'shoot') {
+                // Quick zap/thwip
+                const osc = ctx.createOscillator();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'hit') {
+                // Impact thud
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } else if (type === 'death') {
+                // Pop/crunch
+                const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < data.length; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
+                }
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                gain.gain.value = this.sfxVolume * 0.25;
+                src.connect(gain);
+                src.start(now);
+            } else if (type === 'upgrade') {
+                // Ascending chime
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.setValueAtTime(600, now + 0.08);
+                osc.frequency.setValueAtTime(800, now + 0.16);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'waveClear') {
+                // Triumphant fanfare
+                const osc1 = ctx.createOscillator();
+                osc1.type = 'triangle';
+                osc1.frequency.setValueAtTime(523, now);
+                osc1.frequency.setValueAtTime(659, now + 0.15);
+                osc1.frequency.setValueAtTime(784, now + 0.3);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc1.connect(gain);
+                osc1.start(now);
+                osc1.stop(now + 0.5);
+            } else if (type === 'fortressHit') {
+                // Heavy impact
+                const osc = ctx.createOscillator();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(30, now + 0.2);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            } else if (type === 'lightning') {
+                // Electric crackle
+                const buf = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < data.length; i++) {
+                    const t = i / ctx.sampleRate;
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 8) * Math.sin(t * 3000);
+                }
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                gain.gain.value = this.sfxVolume * 0.35;
+                src.connect(gain);
+                src.start(now);
+            } else if (type === 'meteor') {
+                // Deep explosion boom
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(80, now);
+                osc.frequency.exponentialRampToValueAtTime(20, now + 0.4);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.5, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.5);
+                // Crackle layer
+                const buf = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+                const d = buf.getChannelData(0);
+                for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                const g2 = ctx.createGain();
+                g2.gain.value = this.sfxVolume * 0.3;
+                g2.connect(ctx.destination);
+                src.connect(g2);
+                src.start(now);
+            } else if (type === 'shield') {
+                // Magical hum
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.setValueAtTime(500, now + 0.1);
+                osc.frequency.setValueAtTime(400, now + 0.3);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } else if (type === 'gameOver') {
+                // Sad descending tone
+                const osc = ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.8);
+                gain.gain.setValueAtTime(this.sfxVolume * 0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+                osc.connect(gain);
+                osc.start(now);
+                osc.stop(now + 1.0);
+            }
+        } catch(e) { /* audio not available */ }
+    },
+};
+audio.init();
 
 // ---- Canvas Setup ----
 const canvas = document.getElementById('game-canvas');
@@ -240,6 +440,7 @@ class Projectile {
 
         if (dist < 10) {
             this.target.takeDamage(this.damage);
+            audio.playSfx('hit');
             this.alive = false;
             return;
         }
@@ -665,6 +866,7 @@ class Fortress {
         this.hp = Math.max(0, this.hp - amount);
         this.hitFlash = 0.15;
         game.screenShake = 0.15;
+        audio.playSfx('fortressHit');
     }
 
     update(dt, enemies) {
@@ -705,6 +907,7 @@ class Fortress {
                     t.recoil = 1;
                     const pos = this._getTurretFirePos(ti);
                     game.projectiles.push(new Projectile(pos.x, pos.y, nearest, t.damage, t.color, t.glowColor));
+                    audio.playSfx('shoot');
                 }
             }
         }
@@ -972,7 +1175,7 @@ const game = {
     groundY: 0,
     state: 'idle', // idle, active, gameover
     screenShake: 0,
-    upgradeLevels: { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 },
+    upgradeLevels: { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0, magePower: 0, mageCooldown: 0, mageShield: 0 },
     lastTime: 0,
     clouds: [],
     stars: [],
@@ -1000,13 +1203,14 @@ const game = {
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0, magePower: 0, mageCooldown: 0, mageShield: 0 };
         this._generateClouds();
         this._generateStars();
         this.setupUI();
         this.updateUI();
         document.getElementById('game-over-overlay').classList.add('hidden');
         this.lastTime = performance.now();
+        audio.playMusic('menu');
         this._startLoop();
     },
 
@@ -1080,8 +1284,10 @@ const game = {
         const container = document.getElementById('upgrade-buttons');
         container.innerHTML = '';
 
-        // Stat upgrades
+        // Stat upgrades (skip mage upgrades — shown later)
+        const mageUpgradeKeys = ['magePower', 'mageCooldown', 'mageShield'];
         for (const [key, cfg] of Object.entries(CONFIG.upgrades)) {
+            if (mageUpgradeKeys.includes(key)) continue;
             const btn = document.createElement('button');
             btn.className = 'upgrade-btn';
             btn.dataset.upgrade = key;
@@ -1192,11 +1398,35 @@ const game = {
                 btn.addEventListener('click', () => this.selectAbility(ab.key));
                 container.appendChild(btn);
             }
+
+            // Mage upgrades
+            const mageUpHeader = document.createElement('div');
+            mageUpHeader.className = 'panel-section-header';
+            mageUpHeader.textContent = 'Mage Upgrades';
+            container.appendChild(mageUpHeader);
+
+            for (const key of mageUpgradeKeys) {
+                const cfg = CONFIG.upgrades[key];
+                const btn = document.createElement('button');
+                btn.className = 'upgrade-btn';
+                btn.dataset.upgrade = key;
+                btn.innerHTML = `
+                    <div class="upgrade-name">
+                        <span>${cfg.name}</span>
+                        <span class="upgrade-cost">${this._getUpgradeCost(key)}g</span>
+                    </div>
+                    <div class="upgrade-desc">${cfg.desc}</div>
+                    <div class="upgrade-level">Level ${this.upgradeLevels[key]}</div>
+                `;
+                btn.addEventListener('click', () => this.buyUpgrade(key));
+                container.appendChild(btn);
+            }
         }
 
         document.getElementById('start-wave-btn').addEventListener('click', () => this.startWave());
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
         document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
+        document.getElementById('mute-btn').addEventListener('click', () => this.toggleMute());
 
         // Keyboard listeners (only add once)
         if (!this._keysAdded) {
@@ -1237,6 +1467,11 @@ const game = {
         if (this.gameSpeed === 3) btn.classList.add('fastest');
     },
 
+    toggleMute() {
+        audio.setMuted(!audio.muted);
+        document.getElementById('mute-btn').textContent = audio.muted ? 'Sound: OFF' : 'Sound: ON';
+    },
+
     _getUpgradeCost(key) {
         const cfg = CONFIG.upgrades[key];
         return Math.floor(cfg.baseCost * Math.pow(cfg.costScale, this.upgradeLevels[key]));
@@ -1249,6 +1484,7 @@ const game = {
 
         this.gold -= cost;
         this.upgradeLevels[key]++;
+        audio.playSfx('upgrade');
 
         const cfg = CONFIG.upgrades[key];
         switch (key) {
@@ -1296,6 +1532,8 @@ const game = {
         if (this.gold < 500) return;
         this.gold -= 500;
         this.mageActive = true;
+        audio.playSfx('upgrade');
+        audio.playMusic('endless');
         // If idle, auto-start the next wave
         if (this.state === 'idle') {
             this.startWave();
@@ -1317,15 +1555,19 @@ const game = {
         const ability = this.selectedAbility;
         if (this.abilityCooldowns[ability] > 0) return;
 
+        const cdReduction = 1 - this.upgradeLevels.mageCooldown * 0.1; // -10% per level
         if (ability === 'lightning') {
             this._castLightning(canvasX, canvasY);
-            this.abilityCooldowns.lightning = 8;
+            this.abilityCooldowns.lightning = 8 * cdReduction;
+            audio.playSfx('lightning');
         } else if (ability === 'meteor') {
             this._castMeteor(canvasX, canvasY);
-            this.abilityCooldowns.meteor = 15;
+            this.abilityCooldowns.meteor = 15 * cdReduction;
+            audio.playSfx('meteor');
         } else if (ability === 'shield') {
             this._castShield();
-            this.abilityCooldowns.shield = 20;
+            this.abilityCooldowns.shield = 20 * cdReduction;
+            audio.playSfx('shield');
         }
         this.selectedAbility = null;
         canvas.style.cursor = 'default';
@@ -1348,8 +1590,10 @@ const game = {
             }
         }
         if (!nearest) return;
+        const mageDmgMult = 1 + this.upgradeLevels.magePower * 0.2;
+        const lightningDmg = Math.floor(30 * mageDmgMult);
         targets.push(nearest);
-        nearest.takeDamage(30);
+        nearest.takeDamage(lightningDmg);
 
         // Chain to up to 3 nearby enemies
         for (let i = 0; i < 3; i++) {
@@ -1368,7 +1612,7 @@ const game = {
             }
             if (chainTarget) {
                 targets.push(chainTarget);
-                chainTarget.takeDamage(30);
+                chainTarget.takeDamage(lightningDmg);
             } else break;
         }
 
@@ -1382,13 +1626,14 @@ const game = {
 
     _castMeteor(cx, cy) {
         const radius = 100;
-        // Damage all enemies in radius
+        const mageDmgMult = 1 + this.upgradeLevels.magePower * 0.2;
+        const meteorDmg = Math.floor(50 * mageDmgMult);
         for (const e of this.enemies) {
             if (e.dead) continue;
             const dx = e.x - cx;
             const dy = (e.y - e.height / 2) - cy;
             if (Math.sqrt(dx * dx + dy * dy) < radius) {
-                e.takeDamage(50);
+                e.takeDamage(meteorDmg);
             }
         }
         // Visual: expanding ring
@@ -1408,8 +1653,8 @@ const game = {
     },
 
     _castShield() {
-        this.shieldHP = 50;
-        this.shieldTimer = 5;
+        this.shieldHP = 50 + this.upgradeLevels.mageShield * 25;
+        this.shieldTimer = 5 + this.upgradeLevels.mageShield * 2;
         this.abilityEffects.push({
             type: 'shield_flash', life: 0.3, maxLife: 0.3
         });
@@ -1441,10 +1686,12 @@ const game = {
         if (this.state !== 'idle') return;
         this.state = 'active';
         this.waveManager.startWave();
+        audio.playMusic(this.mageActive ? 'endless' : 'gameplay');
         this.updateUI();
     },
 
     onWaveClear() {
+        audio.playSfx('waveClear');
         const bonus = CONFIG.economy.waveBonusBase + CONFIG.economy.waveBonusPerWave * this.waveManager.waveNum;
         this.gold += bonus;
         this.totalGoldEarned += bonus;
@@ -1470,9 +1717,10 @@ const game = {
         // Endless mode: auto-start next wave if mage is active
         if (this.mageActive) {
             this.waveManager.startWave();
-            // state stays 'active'
+            audio.playMusic('endless');
         } else {
             this.state = 'idle';
+            audio.playMusic('menu');
         }
         this.updateUI();
     },
@@ -1489,6 +1737,7 @@ const game = {
     },
 
     onEnemyKill(enemy) {
+        audio.playSfx('death');
         this.gold += enemy.reward;
         this.totalGoldEarned += enemy.reward;
         this.totalKills++;
@@ -1512,6 +1761,8 @@ const game = {
     },
 
     gameOver() {
+        audio.playSfx('gameOver');
+        audio.stopMusic();
         this.state = 'gameover';
         document.getElementById('final-wave').textContent = this.waveManager.waveNum;
         document.getElementById('final-kills').textContent = this.totalKills;
@@ -1541,11 +1792,12 @@ const game = {
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
-        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0 };
+        this.upgradeLevels = { damage: 0, attackSpeed: 0, range: 0, maxHp: 0, repair: 0, mason: 0, magePower: 0, mageCooldown: 0, mageShield: 0 };
         document.getElementById('game-over-overlay').classList.add('hidden');
         canvas.style.cursor = 'default';
         this.setupUI();
         this._updateSpeedBtn();
+        audio.playMusic('menu');
         this.updateUI();
         this.lastTime = performance.now();
         this._startLoop();
