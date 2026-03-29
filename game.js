@@ -1212,7 +1212,7 @@ const game = {
         this.updateUI();
         document.getElementById('game-over-overlay').classList.add('hidden');
         this.lastTime = performance.now();
-        audio.playMusic('menu');
+        audio.playMusic('endless');
         this._startLoop();
     },
 
@@ -1792,9 +1792,7 @@ const game = {
         if (this.state !== 'idle') return;
         this.state = 'active';
         this.waveManager.startWave();
-        // Only switch music if not already playing the right track
-        const targetTrack = this.mageActive ? 'endless' : 'gameplay';
-        if (audio.currentTrack !== targetTrack) audio.playMusic(targetTrack);
+        if (audio.currentTrack !== 'endless') audio.playMusic('endless');
         this.updateUI();
     },
 
@@ -1825,7 +1823,7 @@ const game = {
         // Endless mode: auto-start next wave if mage or endless toggle is active
         if (this.mageActive || this.endlessMode) {
             this.waveManager.startWave();
-            if (this.mageActive && audio.currentTrack !== 'endless') audio.playMusic('endless');
+            if (audio.currentTrack !== 'endless') audio.playMusic('endless');
         } else {
             this.state = 'idle';
             // Don't restart music — let gameplay track keep playing between waves
@@ -1906,7 +1904,7 @@ const game = {
         canvas.style.cursor = 'default';
         this.setupUI();
         this._updateSpeedBtn();
-        audio.playMusic('menu');
+        audio.playMusic('endless');
         this.updateUI();
         this.lastTime = performance.now();
         this._startLoop();
