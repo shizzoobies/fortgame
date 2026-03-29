@@ -1983,7 +1983,13 @@ const game = {
             }
         }
 
-        // Give rewards for dead enemies
+        // Projectiles (can kill enemies)
+        for (const p of this.projectiles) {
+            p.update(dt);
+        }
+        this.projectiles = this.projectiles.filter(p => p.alive);
+
+        // Give rewards for dead enemies (after projectiles so kills are counted)
         for (const e of this.enemies) {
             if (e.dead && !e._rewarded) {
                 e._rewarded = true;
@@ -1992,12 +1998,6 @@ const game = {
                 }
             }
         }
-
-        // Projectiles (can kill more enemies this frame)
-        for (const p of this.projectiles) {
-            p.update(dt);
-        }
-        this.projectiles = this.projectiles.filter(p => p.alive);
 
         // Particles
         for (const p of this.particles) p.update(dt);
