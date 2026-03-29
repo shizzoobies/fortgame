@@ -352,6 +352,122 @@ body {
     color: #ff6666;
 }
 
+/* ============================================
+   Mobile Responsive
+   ============================================ */
+
+/* Tablet and small screens */
+@media (max-width: 768px) {
+    body {
+        overflow: hidden;
+        height: 100dvh; /* dynamic viewport height for mobile browsers */
+    }
+
+    /* Compact HUD */
+    #hud {
+        padding: 4px 10px;
+        min-height: 40px;
+        gap: 6px;
+    }
+    .hud-label { display: none; }
+    .hud-value { font-size: 16px; }
+    .hud-status { font-size: 10px; padding: 3px 8px; }
+    #hud-hp-bar { width: 120px; height: 18px; }
+    #hud-hp-text { font-size: 9px; }
+
+    /* Panel slides up from bottom on mobile */
+    #upgrade-panel {
+        position: absolute;
+        right: 0;
+        left: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        max-height: 55vh;
+        border-left: none;
+        border-top: 2px solid #3a3a5c;
+        border-radius: 12px 12px 0 0;
+        transform: translateY(0);
+        padding: 8px 12px;
+    }
+    #upgrade-panel.panel-hidden {
+        transform: translateY(100%);
+    }
+
+    /* Panel toggle at bottom-right */
+    #panel-toggle {
+        right: 10px;
+        top: auto;
+        bottom: 10px;
+        transform: none;
+        border: 2px solid #3a3a5c;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 20px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+    #panel-toggle.panel-open {
+        right: 10px;
+        bottom: 56vh;
+    }
+
+    /* Upgrade buttons list scrolls horizontally for upgrades */
+    #upgrade-buttons {
+        gap: 5px;
+    }
+
+    /* Larger tap targets */
+    .upgrade-btn {
+        min-height: 40px;
+        padding: 8px 10px;
+    }
+    .wave-btn {
+        padding: 10px;
+        font-size: 13px;
+        min-height: 44px;
+    }
+    .speed-btn {
+        padding: 6px 8px;
+        font-size: 11px;
+        min-height: 36px;
+        margin-top: 4px;
+    }
+
+    /* Game over - smaller */
+    #game-over-box {
+        padding: 24px 20px;
+        margin: 10px;
+    }
+    #game-over-box h1 { font-size: 22px; }
+    #game-over-box p { font-size: 13px; }
+    #restart-btn { padding: 12px 30px; font-size: 15px; }
+
+    /* Canvas touch */
+    #game-canvas {
+        touch-action: manipulation;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 480px) {
+    .hud-value { font-size: 14px; }
+    #hud-hp-bar { width: 90px; height: 16px; }
+    #hud-hp-text { font-size: 8px; }
+    .hud-status { font-size: 9px; padding: 2px 6px; }
+
+    #upgrade-panel {
+        max-height: 60vh;
+    }
+
+    .upgrade-btn .upgrade-name { font-size: 11px; }
+    .upgrade-btn .upgrade-desc { font-size: 10px; }
+    .upgrade-btn .upgrade-level { font-size: 9px; }
+
+    .panel-title { font-size: 11px; }
+    .panel-section-header { font-size: 9px; }
+}
+
 /* ---- Game Over Overlay ---- */
 #game-over-overlay {
     position: fixed;

@@ -1445,16 +1445,22 @@ const game = {
                 if (e.code === 'Digit3' || e.code === 'Numpad3') this.selectAbility('shield');
                 if (e.code === 'Escape') { this.selectedAbility = null; canvas.style.cursor = 'default'; this.updateUI(); }
             });
-            // Canvas click for abilities
-            canvas.addEventListener('click', (e) => {
+            // Canvas click/touch for abilities
+            const canvasHandler = (clientX, clientY) => {
                 if (!this.mageActive || !this.selectedAbility) return;
                 const rect = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height;
-                const cx = (e.clientX - rect.left) * scaleX;
-                const cy = (e.clientY - rect.top) * scaleY;
+                const cx = (clientX - rect.left) * scaleX;
+                const cy = (clientY - rect.top) * scaleY;
                 this.castAbility(cx, cy);
-            });
+            };
+            canvas.addEventListener('click', (e) => canvasHandler(e.clientX, e.clientY));
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                canvasHandler(touch.clientX, touch.clientY);
+            }, { passive: false });
         }
     },
 
@@ -1467,7 +1473,8 @@ const game = {
 
     _updateSpeedBtn() {
         const btn = document.getElementById('speed-btn');
-        btn.textContent = `${this.gameSpeed}x Speed (Space)`;
+        const isMobile = 'ontouchstart' in window || window.innerWidth <= 768;
+        btn.textContent = isMobile ? `${this.gameSpeed}x Speed` : `${this.gameSpeed}x Speed (Space)`;
         btn.classList.remove('fast', 'fastest');
         if (this.gameSpeed === 2) btn.classList.add('fast');
         if (this.gameSpeed === 3) btn.classList.add('fastest');
