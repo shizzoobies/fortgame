@@ -1167,6 +1167,7 @@ const game = {
     mineLevel: 0,
     mineAccum: 0,
     mageActive: false,
+    endlessMode: false,
     selectedAbility: null,
     abilityCooldowns: { lightning: 0, meteor: 0, shield: 0 },
     shieldHP: 0,
@@ -1195,11 +1196,12 @@ const game = {
         this.mineLevel = 0;
         this.mineAccum = 0;
         this.mageActive = false;
+        this.endlessMode = false;
         this.selectedAbility = null;
         this.abilityCooldowns = { lightning: 0, meteor: 0, shield: 0 };
         this.shieldHP = 0;
         this.shieldTimer = 0;
-        this.abilityEffects = []; // visual effects for abilities
+        this.abilityEffects = [];
         this.state = 'idle';
         this.gameSpeed = 1;
         this.screenShake = 0;
@@ -1303,29 +1305,53 @@ const game = {
             container.appendChild(btn);
         }
 
-        // Weapons section
-        const weaponHeader = document.createElement('div');
-        weaponHeader.className = 'panel-section-header';
-        weaponHeader.textContent = 'Weapons';
-        container.appendChild(weaponHeader);
+        // Weapons / Mage section
+        const allTurretsOwned = Object.keys(CONFIG.turrets).every(k => this.fortress.ownedTurrets.includes(k));
 
-        for (const [key, cfg] of Object.entries(CONFIG.turrets)) {
-            const btn = document.createElement('button');
-            btn.className = 'upgrade-btn turret-btn';
-            btn.dataset.turret = key;
-            const owned = this.fortress.ownedTurrets.includes(key);
-            btn.innerHTML = `
+        if (!allTurretsOwned) {
+            // Show turret shop
+            const weaponHeader = document.createElement('div');
+            weaponHeader.className = 'panel-section-header';
+            weaponHeader.textContent = 'Weapons';
+            container.appendChild(weaponHeader);
+
+            for (const [key, cfg] of Object.entries(CONFIG.turrets)) {
+                const owned = this.fortress.ownedTurrets.includes(key);
+                if (owned) continue; // hide already-bought turrets
+                const btn = document.createElement('button');
+                btn.className = 'upgrade-btn turret-btn';
+                btn.dataset.turret = key;
+                btn.innerHTML = `
+                    <div class="upgrade-name">
+                        <span>${cfg.name}</span>
+                        <span class="upgrade-cost">${cfg.cost}g</span>
+                    </div>
+                    <div class="upgrade-desc">${cfg.desc}</div>
+                `;
+                btn.style.borderLeftColor = cfg.color;
+                btn.style.borderLeftWidth = '3px';
+                btn.addEventListener('click', () => this.buyTurret(key));
+                container.appendChild(btn);
+            }
+        } else if (!this.mageActive) {
+            // All turrets owned — show mage purchase
+            const mageHeader = document.createElement('div');
+            mageHeader.className = 'panel-section-header';
+            mageHeader.textContent = 'Hero';
+            container.appendChild(mageHeader);
+
+            const mageBtn = document.createElement('button');
+            mageBtn.className = 'upgrade-btn mage-btn';
+            mageBtn.innerHTML = `
                 <div class="upgrade-name">
-                    <span>${cfg.name}</span>
-                    <span class="upgrade-cost">${owned ? 'Owned' : cfg.cost + 'g'}</span>
+                    <span>Summon Mage</span>
+                    <span class="upgrade-cost">500g</span>
                 </div>
-                <div class="upgrade-desc">${cfg.desc}</div>
+                <div class="upgrade-desc">Endless waves + click abilities</div>
             `;
-            btn.style.borderLeftColor = cfg.color;
-            btn.style.borderLeftWidth = '3px';
-            if (owned) btn.disabled = true;
-            btn.addEventListener('click', () => this.buyTurret(key));
-            container.appendChild(btn);
+            mageBtn.addEventListener('click', () => this.buyMage());
+            mageBtn.disabled = this.gold < 500;
+            container.appendChild(mageBtn);
         }
 
         // Gold Mine section
@@ -1347,28 +1373,6 @@ const game = {
         `;
         mineBtn.addEventListener('click', () => this.buyMine());
         container.appendChild(mineBtn);
-
-        // Mage hero (only visible when all turrets owned)
-        const allTurretsOwned = Object.keys(CONFIG.turrets).every(k => this.fortress.ownedTurrets.includes(k));
-        if (allTurretsOwned && !this.mageActive) {
-            const mageHeader = document.createElement('div');
-            mageHeader.className = 'panel-section-header';
-            mageHeader.textContent = 'Hero';
-            container.appendChild(mageHeader);
-
-            const mageBtn = document.createElement('button');
-            mageBtn.className = 'upgrade-btn mage-btn';
-            mageBtn.innerHTML = `
-                <div class="upgrade-name">
-                    <span>Summon Mage</span>
-                    <span class="upgrade-cost">500g</span>
-                </div>
-                <div class="upgrade-desc">Endless waves + click abilities</div>
-            `;
-            mageBtn.addEventListener('click', () => this.buyMage());
-            mageBtn.disabled = this.gold < 500;
-            container.appendChild(mageBtn);
-        }
 
         // Ability buttons (only when mage is active)
         if (this.mageActive) {
@@ -1427,6 +1431,7 @@ const game = {
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
         document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
         document.getElementById('mute-btn').addEventListener('click', () => this.toggleMute());
+        document.getElementById('endless-btn').addEventListener('click', () => this.toggleEndless());
         document.getElementById('panel-toggle').addEventListener('click', () => this.togglePanel());
 
         // Keyboard listeners (only add once)
@@ -1471,6 +1476,16 @@ const game = {
     toggleMute() {
         audio.setMuted(!audio.muted);
         document.getElementById('mute-btn').textContent = audio.muted ? 'Sound: OFF' : 'Sound: ON';
+    },
+
+    toggleEndless() {
+        this.endlessMode = !this.endlessMode;
+        document.getElementById('endless-btn').textContent = this.endlessMode ? 'Endless: ON' : 'Endless: OFF';
+        // If turning on while idle, auto-start next wave
+        if (this.endlessMode && this.state === 'idle' && this.waveManager.waveNum > 0) {
+            this.startWave();
+        }
+        this.updateUI();
     },
 
     togglePanel() {
@@ -1528,6 +1543,9 @@ const game = {
         if (this.gold < cfg.cost) return;
         this.gold -= cfg.cost;
         this.fortress.addTurret(typeKey);
+        audio.playSfx('upgrade');
+        // Rebuild UI so mage button can appear if all turrets are now owned
+        this.setupUI();
         this.updateUI();
     },
 
@@ -1694,7 +1712,9 @@ const game = {
         if (this.state !== 'idle') return;
         this.state = 'active';
         this.waveManager.startWave();
-        audio.playMusic(this.mageActive ? 'endless' : 'gameplay');
+        // Only switch music if not already playing the right track
+        const targetTrack = this.mageActive ? 'endless' : 'gameplay';
+        if (audio.currentTrack !== targetTrack) audio.playMusic(targetTrack);
         this.updateUI();
     },
 
@@ -1722,13 +1742,13 @@ const game = {
             }
         }
 
-        // Endless mode: auto-start next wave if mage is active
-        if (this.mageActive) {
+        // Endless mode: auto-start next wave if mage or endless toggle is active
+        if (this.mageActive || this.endlessMode) {
             this.waveManager.startWave();
-            audio.playMusic('endless');
+            if (this.mageActive && audio.currentTrack !== 'endless') audio.playMusic('endless');
         } else {
             this.state = 'idle';
-            audio.playMusic('menu');
+            // Don't restart music — let gameplay track keep playing between waves
         }
         this.updateUI();
     },
@@ -1792,6 +1812,7 @@ const game = {
         this.mineLevel = 0;
         this.mineAccum = 0;
         this.mageActive = false;
+        this.endlessMode = false;
         this.selectedAbility = null;
         this.abilityCooldowns = { lightning: 0, meteor: 0, shield: 0 };
         this.shieldHP = 0;
@@ -1911,8 +1932,14 @@ const game = {
         });
 
         // Wave button in endless mode
-        if (this.mageActive && this.state === 'active') {
+        if ((this.mageActive || this.endlessMode) && this.state === 'active') {
             waveBtn.textContent = `Wave ${this.waveManager.waveNum} (Endless)`;
+        }
+
+        // Endless toggle button
+        const endlessBtn = document.getElementById('endless-btn');
+        if (endlessBtn) {
+            endlessBtn.textContent = this.endlessMode ? 'Endless: ON' : 'Endless: OFF';
         }
     },
 
