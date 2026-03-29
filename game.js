@@ -1382,9 +1382,9 @@ const game = {
             container.appendChild(abilHeader);
 
             const abilities = [
-                { key: 'lightning', name: 'Lightning (1)', desc: 'Chain bolt, 8s CD', color: '#55aaff' },
-                { key: 'meteor', name: 'Meteor (2)', desc: 'AOE blast, 15s CD', color: '#ff6633' },
-                { key: 'shield', name: 'Shield (3)', desc: 'Block 50 dmg, 20s CD', color: '#44ddff' },
+                { key: 'lightning', name: 'Lightning (1)', desc: 'Chain 6 enemies, 2x vs light', color: '#55aaff' },
+                { key: 'meteor', name: 'Meteor (2)', desc: 'Meteor strike, huge AOE', color: '#ff6633' },
+                { key: 'shield', name: 'Shield (3)', desc: 'Absorb damage, instant', color: '#44ddff' },
             ];
             for (const ab of abilities) {
                 const btn = document.createElement('button');
@@ -1571,37 +1571,86 @@ const game = {
     selectAbility(type) {
         if (!this.mageActive) return;
         if (this.abilityCooldowns[type] > 0) return;
-        this.selectedAbility = this.selectedAbility === type ? null : type;
-        canvas.style.cursor = this.selectedAbility ? 'crosshair' : 'default';
-        this.updateUI();
-    },
+        const cdReduction = 1 - this.upgradeLevels.mageCooldown * 0.1;
 
-    castAbility(canvasX, canvasY) {
-        if (!this.mageActive || !this.selectedAbility) return;
-        const ability = this.selectedAbility;
-        if (this.abilityCooldowns[ability] > 0) return;
-
-        const cdReduction = 1 - this.upgradeLevels.mageCooldown * 0.1; // -10% per level
-        if (ability === 'lightning') {
-            this._castLightning(canvasX, canvasY);
-            this.abilityCooldowns.lightning = 8 * cdReduction;
-            audio.playSfx('lightning');
-        } else if (ability === 'meteor') {
-            this._castMeteor(canvasX, canvasY);
-            this.abilityCooldowns.meteor = 15 * cdReduction;
-            audio.playSfx('meteor');
-        } else if (ability === 'shield') {
+        // All abilities are instant cast — auto-target the best spot
+        if (type === 'shield') {
             this._castShield();
             this.abilityCooldowns.shield = 20 * cdReduction;
             audio.playSfx('shield');
+        } else if (type === 'lightning') {
+            // Auto-target densest cluster of enemies
+            const target = this._findEnemyCluster();
+            if (target) {
+                this._castLightning(target.x, target.y - target.height / 2);
+                this.abilityCooldowns.lightning = 8 * cdReduction;
+                audio.playSfx('lightning');
+            }
+        } else if (type === 'meteor') {
+            // Auto-target densest cluster of enemies
+            const pos = this._findBestMeteorTarget();
+            if (pos) {
+                this._castMeteor(pos.x, pos.y);
+                this.abilityCooldowns.meteor = 12 * cdReduction;
+                audio.playSfx('meteor');
+            }
         }
-        this.selectedAbility = null;
-        canvas.style.cursor = 'default';
         this.updateUI();
     },
 
+    // Find enemy with most neighbors (best lightning target)
+    _findEnemyCluster() {
+        let best = null;
+        let bestScore = -1;
+        for (const e of this.enemies) {
+            if (e.dead) continue;
+            let score = 0;
+            for (const other of this.enemies) {
+                if (other.dead || other === e) continue;
+                const dx = other.x - e.x;
+                const dy = other.y - e.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 120) score++;
+            }
+            if (score > bestScore || (score === bestScore && e.x < (best ? best.x : Infinity))) {
+                bestScore = score;
+                best = e;
+            }
+        }
+        return best || this.enemies.find(e => !e.dead);
+    },
+
+    // Find position that hits the most enemies with meteor radius
+    _findBestMeteorTarget() {
+        if (this.enemies.filter(e => !e.dead).length === 0) return null;
+        let bestPos = null;
+        let bestCount = 0;
+        // Sample enemy positions as potential targets
+        for (const e of this.enemies) {
+            if (e.dead) continue;
+            const cx = e.x;
+            const cy = e.y - e.height / 2;
+            let count = 0;
+            for (const other of this.enemies) {
+                if (other.dead) continue;
+                const dx = other.x - cx;
+                const dy = (other.y - other.height / 2) - cy;
+                if (Math.sqrt(dx * dx + dy * dy) < 130) count++;
+            }
+            if (count > bestCount) {
+                bestCount = count;
+                bestPos = { x: cx, y: cy };
+            }
+        }
+        return bestPos;
+    },
+
+    // Legacy canvas click — still works if player prefers manual aiming
+    castAbility(canvasX, canvasY) {
+        if (!this.mageActive || !this.selectedAbility) return;
+        // Abilities are now instant-cast via selectAbility, but keep this for manual override
+    },
+
     _castLightning(cx, cy) {
-        // Find nearest enemy to click point
         let targets = [];
         let nearest = null;
         let nearestDist = Infinity;
@@ -1617,12 +1666,15 @@ const game = {
         }
         if (!nearest) return;
         const mageDmgMult = 1 + this.upgradeLevels.magePower * 0.2;
-        const lightningDmg = Math.floor(30 * mageDmgMult);
+        const baseDmg = 40;
         targets.push(nearest);
-        nearest.takeDamage(lightningDmg);
+        // Bonus damage to light enemies (grunts, runners, bats)
+        const lightTypes = ['grunt', 'runner', 'bat'];
+        const dmgFor = (e) => Math.floor(baseDmg * mageDmgMult * (lightTypes.includes(e.type) ? 2.0 : 1.0));
+        nearest.takeDamage(dmgFor(nearest));
 
-        // Chain to up to 3 nearby enemies
-        for (let i = 0; i < 3; i++) {
+        // Chain to up to 6 nearby enemies (was 3)
+        for (let i = 0; i < 6; i++) {
             const last = targets[targets.length - 1];
             let chainTarget = null;
             let chainDist = Infinity;
@@ -1631,51 +1683,72 @@ const game = {
                 const dx = e.x - last.x;
                 const dy = e.y - last.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 80 && dist < chainDist) {
+                if (dist < 120 && dist < chainDist) {
                     chainDist = dist;
                     chainTarget = e;
                 }
             }
             if (chainTarget) {
                 targets.push(chainTarget);
-                chainTarget.takeDamage(lightningDmg);
+                chainTarget.takeDamage(dmgFor(chainTarget));
             } else break;
         }
 
         // Visual: lightning bolt effect
         this.abilityEffects.push({
             type: 'lightning', targets: targets.map(t => ({ x: t.x, y: t.y - t.height / 2 })),
-            life: 0.4, maxLife: 0.4
+            life: 0.5, maxLife: 0.5
         });
-        this.screenShake = 0.1;
+        this.screenShake = 0.15;
     },
 
     _castMeteor(cx, cy) {
-        const radius = 100;
+        // Meteor falls from sky then explodes on impact
+        const radius = 130;
         const mageDmgMult = 1 + this.upgradeLevels.magePower * 0.2;
-        const meteorDmg = Math.floor(50 * mageDmgMult);
-        for (const e of this.enemies) {
-            if (e.dead) continue;
-            const dx = e.x - cx;
-            const dy = (e.y - e.height / 2) - cy;
-            if (Math.sqrt(dx * dx + dy * dy) < radius) {
-                e.takeDamage(meteorDmg);
-            }
-        }
-        // Visual: expanding ring
+        const meteorDmg = Math.floor(70 * mageDmgMult);
+
+        // Falling meteor visual (travels from top to click point)
         this.abilityEffects.push({
-            type: 'meteor', x: cx, y: cy, radius: radius,
-            life: 0.6, maxLife: 0.6
+            type: 'meteor_fall', x: cx, y: cy,
+            startY: -50, // starts above screen
+            life: 0.4, maxLife: 0.4
         });
-        this.screenShake = 0.25;
-        // Particles
-        for (let i = 0; i < 15; i++) {
-            this.particles.push(new Particle(
-                cx + randRange(-30, 30), cy + randRange(-30, 30),
-                randRange(-80, 80), randRange(-100, -30),
-                randRange(0.4, 0.8), '#ff6633', randRange(3, 6)
-            ));
-        }
+
+        // Delayed explosion (after meteor lands)
+        setTimeout(() => {
+            // Damage all enemies in radius
+            for (const e of this.enemies) {
+                if (e.dead) continue;
+                const dx = e.x - cx;
+                const dy = (e.y - e.height / 2) - cy;
+                if (Math.sqrt(dx * dx + dy * dy) < radius) {
+                    e.takeDamage(meteorDmg);
+                }
+            }
+            // Explosion visual
+            this.abilityEffects.push({
+                type: 'meteor_explode', x: cx, y: cy, radius: radius,
+                life: 0.8, maxLife: 0.8
+            });
+            this.screenShake = 0.35;
+            // Big particle explosion
+            for (let i = 0; i < 25; i++) {
+                this.particles.push(new Particle(
+                    cx + randRange(-20, 20), cy + randRange(-20, 20),
+                    randRange(-120, 120), randRange(-150, -30),
+                    randRange(0.5, 1.0), i % 3 === 0 ? '#ffcc33' : '#ff5522', randRange(3, 8)
+                ));
+            }
+            // Ground scorch particles
+            for (let i = 0; i < 10; i++) {
+                this.particles.push(new Particle(
+                    cx + randRange(-60, 60), cy,
+                    randRange(-30, 30), randRange(-20, -5),
+                    randRange(0.3, 0.6), '#332211', randRange(4, 7)
+                ));
+            }
+        }, 350); // delay matches fall animation
     },
 
     _castShield() {
@@ -2218,19 +2291,54 @@ const game = {
                 }
                 ctx.shadowBlur = 0;
                 ctx.globalAlpha = 1;
-            } else if (fx.type === 'meteor') {
+            } else if (fx.type === 'meteor_fall') {
+                // Meteor falling from sky to target
+                const progress = 1 - fx.life / fx.maxLife; // 0 to 1
+                const currentY = lerp(fx.startY, fx.y, progress);
+                const meteorSize = 12 + progress * 8;
+                // Fireball
+                ctx.globalAlpha = 0.9;
+                ctx.fillStyle = '#ff4411';
+                ctx.beginPath();
+                ctx.arc(fx.x, currentY, meteorSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffaa33';
+                ctx.beginPath();
+                ctx.arc(fx.x, currentY, meteorSize * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffeeaa';
+                ctx.beginPath();
+                ctx.arc(fx.x, currentY, meteorSize * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                // Trail
+                ctx.globalAlpha = 0.4;
+                ctx.fillStyle = '#ff6633';
+                for (let t = 1; t <= 4; t++) {
+                    const ty = currentY - t * 15;
+                    const tr = meteorSize * (1 - t * 0.2);
+                    ctx.beginPath();
+                    ctx.arc(fx.x + randRange(-3, 3), ty, tr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            } else if (fx.type === 'meteor_explode') {
                 const progress = 1 - fx.life / fx.maxLife;
-                ctx.globalAlpha = alpha * 0.5;
-                // Expanding ring
+                // Shockwave ring
+                ctx.globalAlpha = alpha * 0.7;
                 ctx.strokeStyle = '#ff6633';
-                ctx.lineWidth = 4;
+                ctx.lineWidth = 6 * alpha;
                 ctx.beginPath();
                 ctx.arc(fx.x, fx.y, fx.radius * progress, 0, Math.PI * 2);
                 ctx.stroke();
-                // Inner glow
-                ctx.fillStyle = `rgba(255, 100, 30, ${alpha * 0.3})`;
+                // Bright flash in center (fades fast)
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha * 0.5 * (1 - progress)})`;
                 ctx.beginPath();
-                ctx.arc(fx.x, fx.y, fx.radius * progress * 0.6, 0, Math.PI * 2);
+                ctx.arc(fx.x, fx.y, fx.radius * 0.4 * (1 - progress * 0.5), 0, Math.PI * 2);
+                ctx.fill();
+                // Fire fill
+                ctx.fillStyle = `rgba(255, 80, 20, ${alpha * 0.25})`;
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius * progress * 0.7, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.globalAlpha = 1;
             } else if (fx.type === 'shield_flash') {
