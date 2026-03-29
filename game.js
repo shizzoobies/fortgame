@@ -1427,6 +1427,7 @@ const game = {
         document.getElementById('restart-btn').addEventListener('click', () => this.restart());
         document.getElementById('speed-btn').addEventListener('click', () => this.toggleSpeed());
         document.getElementById('mute-btn').addEventListener('click', () => this.toggleMute());
+        document.getElementById('panel-toggle').addEventListener('click', () => this.togglePanel());
 
         // Keyboard listeners (only add once)
         if (!this._keysAdded) {
@@ -1470,6 +1471,13 @@ const game = {
     toggleMute() {
         audio.setMuted(!audio.muted);
         document.getElementById('mute-btn').textContent = audio.muted ? 'Sound: OFF' : 'Sound: ON';
+    },
+
+    togglePanel() {
+        const panel = document.getElementById('upgrade-panel');
+        const btn = document.getElementById('panel-toggle');
+        panel.classList.toggle('panel-hidden');
+        btn.classList.toggle('panel-open');
     },
 
     _getUpgradeCost(key) {
